@@ -35,13 +35,15 @@ cd /tmp
 ```
 Для форматирования всей флешки в один раздел
 ``` bash
-wget https://raw.githubusercontent.com/1andrevich/outline-install-wrt/main/install_outline.sh -O mount_usb.sh
+wget https://github.com/arhitru/TP-Link-Arcer-C5-USB/blob/main/mount_usb_1.sh -O mount_usb.sh
 ```
 Для форматирования флешки от 4Гб на 3 раздела
 ``` bash
+wget https://github.com/arhitru/TP-Link-Arcer-C5-USB/blob/main/mount_usb_4.sh -O mount_usb.sh
 ```
 Для форматирования флешки в интерактивном режиме
 ``` bash
+wget https://github.com/arhitru/TP-Link-Arcer-C5-USB/blob/main/mount_usb_interact.sh -O mount_usb.sh
 ```
 дадим права на запуск
 ``` bash

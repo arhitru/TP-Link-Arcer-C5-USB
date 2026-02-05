@@ -26,15 +26,13 @@ echo "Созданные разделы:"
 parted -s ${DISK} print
 echo ""
 echo "Информация о файловых системах:"
-blkid
 
 # Configure the extroot mount entry.
 eval $(block info | grep -o -e 'MOUNT="\S*/overlay"')
 
 # Получаем UUID разделов
-UUID_EXTROOT=$(blkid -s UUID -o value /dev/sda1)
-UUID_DATA=$(blkid -s UUID -o value /dev/sda2)
-UUID_SWAP=$(blkid -s UUID -o value /dev/sda3)
+UUID_EXTROOT="$(block info ${DISK}1 | grep -o -e 'UUID="\S*"')"
+UUID_DATA="$(block info ${DISK}3 | grep -o -e 'UUID="\S*"')"
 
 # Настраиваем extroot 
 uci -q delete fstab.extroot
@@ -47,7 +45,7 @@ uci set fstab.extroot.enabled="1"
 # Настраиваем swap
 uci -q delete fstab.swap
 uci set fstab.swap="swap"
-uci set fstab.swap.uuid="${UUID_SWAP}"
+uci set fstab.swap.label="SWAP"  # Используем метку
 uci set fstab.swap.enabled="1"
 
 # Настраиваем data раздел
