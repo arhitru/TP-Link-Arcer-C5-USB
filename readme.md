@@ -40,5 +40,47 @@
     - Монтирует оригинальную внутреннюю память как /rwm для чтения/записи.
     - Монтирует новый раздел в /mnt.
     - Копирует все данные из текущего overlay в новый раздел.
-12. Возвращаем настройки сети на компе.
+12. Возвращаем настройки сети на ПК.
 12. Заходим браузером в админку роутера по адресу 192.168.1.1.
+
+
+Проверка
+Через Web интерфейс
+    **LuCI → System → Mount Points** должен быть показан раздел на внешнем USB устройстве подмонтированный как overlay.
+    **LuCI → System → Software** должно быть показано большее свободное пространство на overlay разделе.
+Через командную строку
+    Раздел на внешнем USB устройстве должен быть подмонтирован как overlay Свободное пространство в корневом разделе / должно быть равно пространству на /overlay.
+```bash
+# grep -e /overlay /etc/mtab
+/dev/sda1 /overlay ext4 rw,relatime,data=ordered
+overlayfs:/overlay / overlay rw,noatime,lowerdir=/,upperdir=/overlay/upper,workdir=/overlay/work
+ 
+# df /overlay /
+Filesystem           1K-blocks      Used Available Use% Mounted on
+/dev/sda1              7759872    477328   7221104   6% /overlay
+overlayfs:/overlay     7759872    477328   7221104   6% /
+```
+
+Сохранение списков программных пакетов при загрузке
+Сохранение статуса установленных пакетов opkg в /usr/lib/opkg/lists хранящемся в extroot, а не в RAM, экономит некоторую оперативную память и сохраняет списки пакетов доступными после перезагрузки.
+
+Через Web интерфейс
+1. **LuCI → System → Software → Configuration**
+
+смените
+```bash
+lists_dir ext /var/opkg-lists
+```
+на
+```bash
+lists_dir ext /usr/lib/opkg/lists
+```
+это должно выглядеть примерно так:
+```bash
+dest root /
+dest ram /tmp
+lists_dir ext /usr/lib/opkg/lists
+option overlay_root /overlay
+option check_signature
+```
+2. **LuCI → System → Software → Actions → Update lists** производит первоначальное обновление списка пакетов на extroot
