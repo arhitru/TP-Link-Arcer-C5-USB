@@ -4,14 +4,15 @@
     Платформа: ramips/mt7620
     Версия: 24.10.5 (r29087-d9c5716d1d)
 Установленные пакеты:
+
     base-files ca-bundle dnsmasq dropbear firewall4 fstools kmod-gpio-button-hotplug kmod-nft-offload kmod-rt2800-soc libc libgcc libustream-mbedtls logd mtd netifd nftables opkg procd-ujail swconfig uci uclient-fetch urandom-seed urngd wpad-basic-mbedtls kmod-usb2 kmod-mt76x2 kmod-switch-rtl8367b luci block-mount kmod-fs-ext4 e2fsprogs parted kmod-usb-storage
 
 Понадобится USB-накопитель. ВСЕ данные на нём будут ПОТЕРЯНЫ.
 
 Важные предупреждения:
 - Скрипт уничтожит все данные на /dev/sda
-    - Устройство /dev/sda должно быть постоянно подключено
-    - Рекомендуется сделать резервную копию конфигурации перед выполнением
+- Устройство /dev/sda должно быть постоянно подключено
+- Рекомендуется сделать резервную копию конфигурации перед выполнением
 
 Прошивка через Tftpd64.
 1. Переименовать файл tp_recovery_C5_USB.bin в tp_recovery.bin.
