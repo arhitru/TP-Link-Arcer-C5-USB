@@ -46,7 +46,7 @@ uci set fstab.extroot.enabled="1"
 # Настраиваем swap
 uci -q delete fstab.swap
 uci set fstab.swap="swap"
-uci set fstab.swap.label="SWAP"  # Используем метку
+#uci set fstab.swap.label="SWAP"  # Используем метку
 uci set fstab.swap.device="${DISK}2"
 uci set fstab.swap.enabled="1"
 
