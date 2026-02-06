@@ -6,7 +6,11 @@
 
 Установленные пакеты:
 
-    base-files ca-bundle dnsmasq dropbear firewall4 fstools kmod-gpio-button-hotplug kmod-nft-offload kmod-rt2800-soc libc libgcc libustream-mbedtls logd mtd netifd nftables opkg procd-ujail swconfig uci uclient-fetch urandom-seed urngd wpad-basic-mbedtls kmod-usb2 kmod-mt76x2 kmod-switch-rtl8367b luci block-mount kmod-fs-ext4 e2fsprogs parted kmod-usb-storage
+    base-files ca-bundle dnsmasq dropbear firewall4 fstools kmod-gpio-button-hotplug 
+    kmod-nft-offload kmod-rt2800-soc libc libgcc libustream-mbedtls logd mtd netifd 
+    nftables opkg procd-ujail swconfig uci uclient-fetch urandom-seed urngd wpad-basic-mbedtls 
+    kmod-usb2 kmod-mt76x2 kmod-switch-rtl8367b luci 
+    block-mount kmod-fs-ext4 e2fsprogs parted kmod-usb-storage
 
 Понадобится USB-накопитель. ВСЕ данные на нём будут ПОТЕРЯНЫ.
 
@@ -33,20 +37,82 @@
     Using local port 49666 [04/02 16:28:54.752]
     <tp_recovery.bin>: sent 15873 blks, 8126464 bytes in 4 s. 0 blk resent [04/02 16:28:58.255]
 ```
-11. После загрузки прошивки отработает скрипт настроек для расширения корневой файловой системы OpenWRT на отдельный раздел диска. Цель скрипта перенести корневую файловую систему OpenWRT с ограниченной внутренней памяти на внешний накопитель для увеличения доступного пространства.
-    - Определяет целевой диск.
-    - создает GPT таблицу разделов.
-    - создает раздел от 2048-го сектора до предпоследнего 2048-го сектора.
-    - Создает файловую систему ext4 на первом разделе.
-    - устанавливает метку раздела.
-    - Извлекает UUID созданного раздела в переменную.
-    - Находит текущую точку монтирования overlay.
-    - Настраивает автоматическое монтирование нового раздела как корневой файловой системы.
-    - Монтирует оригинальную внутреннюю память как /rwm для чтения/записи.
-    - Монтирует новый раздел в /mnt.
-    - Копирует все данные из текущего overlay в новый раздел.
-12. Возвращаем настройки сети на ПК.
+11. Возвращаем настройки сети на ПК.
 12. Заходим браузером в админку роутера по адресу 192.168.1.1.
+13. Подключаемся через ssh к устройству по адресу 192.168.1.1.
+14. Последовательно вводим команды:
+```
+DISK="/dev/sda"
+parted -s ${DISK} mklabel gpt
+parted -s ${DISK} mkpart "extroot" ext4 2048s 1GB
+mkfs.ext4 -L "extroot" ${DISK}1
+parted -s ${DISK} mkpart "swap" linux-swap 1GB 2GB
+mkswap -L "swap" ${DISK}2
+swapon ${DISK}2  # Активируем сразу
+parted -s ${DISK} mkpart "data" ext4 2GB 100%
+mkfs.ext4 -L "data" ${DISK}3
+```
+**Просмотр результата**
+```
+parted -s ${DISK} print
+```
+**Configure the extroot mount entry.**
+```
+eval $(block info | grep -o -e 'MOUNT="\S*/overlay"')
+```
+# Получаем UUID разделов
+UUID_EXTROOT="$(block info ${DISK}1 | grep -o -e 'UUID="\S*"')"
+UUID_DATA="$(block info ${DISK}3 | grep -o -e 'UUID="\S*"')"
+
+# Настраиваем extroot 
+uci -q delete fstab.extroot
+uci set fstab.extroot="mount"
+#uci set fstab.extroot.uuid="${UUID_EXTROOT}"
+uci set fstab.extroot.device="${DISK}1"
+uci set fstab.extroot.target="${MOUNT}"
+#uci set fstab.extroot.options="rw,noatime"
+uci set fstab.extroot.enabled="1"
+
+# Настраиваем swap
+uci -q delete fstab.swap
+uci set fstab.swap="swap"
+#uci set fstab.swap.label="SWAP"  # Используем метку
+uci set fstab.swap.device="${DISK}2"
+uci set fstab.swap.enabled="1"
+
+# Настраиваем data раздел
+uci -q delete fstab.data
+uci set fstab.data="mount"
+#uci set fstab.data.uuid="${UUID_DATA}"
+uci set fstab.data.device="${DISK}3"
+uci set fstab.data.target="/mnt/data"
+#uci set fstab.data.options="rw,noatime,data=ordered"
+uci set fstab.data.enabled="1"
+
+# Сохраняем изменения
+uci commit fstab
+
+# Создаем точку монтирования и монтируем сразу
+mkdir -p /mnt/data
+mount /dev/sda3 /mnt/data
+
+# Configuring rootfs_data / ubifs
+# Configure a mount entry for the the original overlay.
+ORIG="$(block info | sed -n -e '/MOUNT="\S*\/overlay"/s/:\s.*$//p')"
+uci -q delete fstab.rwm
+uci set fstab.rwm="mount"
+uci set fstab.rwm.device="${ORIG}"
+uci set fstab.rwm.target="/rwm"
+uci commit fstab
+# This will allow you to access the rootfs_data / ubifs partition and customize the extroot configuration /rwm/upper/etc/config/fstab.
+
+# Transfer the content of the current overlay to the external drive.
+mount ${DISK}1 /mnt
+tar -C ${MOUNT} -cvf - . | tar -C /mnt -xf -
+
+# Reboot the device to apply the changes.
+reboot
+```
 
 
 ## **Проверка**
