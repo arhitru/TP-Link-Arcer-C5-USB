@@ -64,7 +64,7 @@ UUID_DATA="$(block info ${DISK}3 | grep -o -e 'UUID="\S*"')"
 # Настраиваем extroot 
 uci -q delete fstab.extroot
 uci set fstab.extroot="mount"
-uci set fstab.extroot.uuid="${UUID_EXTROOT}"
+#uci set fstab.extroot.uuid="${UUID_EXTROOT}"
 uci set fstab.extroot.device="${DISK}1"
 uci set fstab.extroot.target="${MOUNT}"
 uci set fstab.extroot.options="rw,noatime"
@@ -133,8 +133,22 @@ Filesystem           1K-blocks      Used Available Use% Mounted on
 overlayfs:/overlay     7759872    477328   7221104   6% /
 ```
 
+## **Восстановление удалённых пакетов**
+```bash
+cd /tmp
+wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup_required_packages.sh -O setup_required_packages.sh
+chmod +x setup_required_packages.sh
+./setup_required_packages.sh
+```
+
 ## **Сохранение списков программных пакетов при загрузке**
 Сохранение статуса установленных пакетов opkg в /usr/lib/opkg/lists хранящемся в extroot, а не в RAM, экономит некоторую оперативную память и сохраняет списки пакетов доступными после перезагрузки.
+
+### **Через командную строку**
+```
+sed -i -r -e "s/^(lists_dir\sext\s).*/\1\/usr\/lib\/opkg\/lists/" /etc/opkg.conf
+opkg update
+```
 
 ### **Через Web интерфейс**
 1. **LuCI → System → Software → Configuration**
