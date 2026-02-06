@@ -51,15 +51,13 @@ mkswap -L "swap" ${DISK}2
 swapon ${DISK}2  # Активируем сразу
 parted -s ${DISK} mkpart "data" ext4 2GB 100%
 mkfs.ext4 -L "data" ${DISK}3
-```
-**Просмотр результата**
-```
+
+# Просмотр результата
 parted -s ${DISK} print
-```
-**Configure the extroot mount entry.**
-```
+
+# Configure the extroot mount entry.
 eval $(block info | grep -o -e 'MOUNT="\S*/overlay"')
-```
+
 # Получаем UUID разделов
 UUID_EXTROOT="$(block info ${DISK}1 | grep -o -e 'UUID="\S*"')"
 UUID_DATA="$(block info ${DISK}3 | grep -o -e 'UUID="\S*"')"
@@ -67,26 +65,25 @@ UUID_DATA="$(block info ${DISK}3 | grep -o -e 'UUID="\S*"')"
 # Настраиваем extroot 
 uci -q delete fstab.extroot
 uci set fstab.extroot="mount"
-#uci set fstab.extroot.uuid="${UUID_EXTROOT}"
+uci set fstab.extroot.uuid="${UUID_EXTROOT}"
 uci set fstab.extroot.device="${DISK}1"
 uci set fstab.extroot.target="${MOUNT}"
-#uci set fstab.extroot.options="rw,noatime"
+uci set fstab.extroot.options="rw,noatime"
 uci set fstab.extroot.enabled="1"
 
 # Настраиваем swap
 uci -q delete fstab.swap
 uci set fstab.swap="swap"
-#uci set fstab.swap.label="SWAP"  # Используем метку
 uci set fstab.swap.device="${DISK}2"
 uci set fstab.swap.enabled="1"
 
 # Настраиваем data раздел
 uci -q delete fstab.data
 uci set fstab.data="mount"
-#uci set fstab.data.uuid="${UUID_DATA}"
+uci set fstab.data.uuid="${UUID_DATA}"
 uci set fstab.data.device="${DISK}3"
 uci set fstab.data.target="/mnt/data"
-#uci set fstab.data.options="rw,noatime,data=ordered"
+uci set fstab.data.options="rw,noatime,data=ordered"
 uci set fstab.data.enabled="1"
 
 # Сохраняем изменения
