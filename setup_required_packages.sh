@@ -1,65 +1,111 @@
 #!/bin/sh
+
+# System Details
+MODEL=$(cat /tmp/sysinfo/model)
+source /etc/os-release
+printf "\033[34;1mModel: $MODEL\033[0m\n"
+printf "\033[34;1mVersion: $OPENWRT_RELEASE\033[0m\n"
+
+VERSION_ID=$(echo $VERSION | awk -F. '{print $1}')
+
+if [ "$VERSION_ID" -ne 23 ] && [ "$VERSION_ID" -ne 24 ]; then
+    printf "\033[31;1mScript only support OpenWrt 23.05 and 24.10\033[0m\n"
+    echo "For OpenWrt 21.02 and 22.03 you can:"
+    echo "1) Use ansible https://github.com/itdoginfo/domain-routing-openwrt"
+    echo "2) Configure manually. Old manual: https://itdog.info/tochechnaya-marshrutizaciya-na-routere-s-openwrt-wireguard-i-dnscrypt/"
+    exit 1
+fi
+
+printf "\033[31;1mAll actions performed here cannot be rolled back automatically.\033[0m\n"
+
+while [ "$MESH" != "y" ] && [ "$MESH" != "n" ]; do
+    echo "Install MESH package? [y/n]: "
+    read MESH
+done
+
+while [ "$TUN" != "y" ] && [ "$TUN" != "n" ]; do
+    echo "Do you want to set up an Outline VPN? [y/n]: "
+    read TUN
+done
+
 ## **Сохранение списков программных пакетов при загрузке**
 # Сохранение статуса установленных пакетов opkg в /usr/lib/opkg/lists хранящемся в extroot, а не в RAM, экономит некоторую оперативную память и сохраняет списки пакетов доступными после перезагрузки.
-
 sed -i -r -e "s/^(lists_dir\sext\s).*/\1\/usr\/lib\/opkg\/lists/" /etc/opkg.conf
-opkg update
+printf "\033[32;1mChecking OpenWrt repo availability...\033[0m\n"
+opkg update | grep -q "Failed to download" && printf "\033[32;1mopkg failed. Check internet or date. Command for force ntp sync: ntpd -p ptbtime1.ptb.de\033[0m\n" && exit 1
 
 # Check for kmod-leds-gpio
 # Проверяет наличие kmod-leds-gpio
-opkg list-installed | grep kmod-leds-gpio > /dev/null
-if [ $? -ne 0 ]; then
-    echo "kmod-leds-gpio is not installed."
+if opkg list-installed | grep -q kmod-leds-gpio; then
+    printf "\033[32;1mkmod-leds-gpio already installed\033[0m\n"
+else
+    echo "Installed kmod-leds-gpio"
     opkg install kmod-leds-gpio
-    echo 'kmod-leds-gpio installed'
 fi
 
 # Check for odhcp6c
 # Проверяет наличие odhcp6c
-opkg list-installed | grep odhcp6c > /dev/null
-if [ $? -ne 0 ]; then
-    echo "odhcp6c is not installed."
+if opkg list-installed | grep -q odhcp6c; then
+    printf "\033[32;1modhcp6c already installed\033[0m\n"
+else
+    echo "Installed odhcp6c"
     opkg install odhcp6c
-    echo 'odhcp6c installed'
 fi
 
 # Check for odhcpd-ipv6only
 # Проверяет наличие odhcpd-ipv6only
-opkg list-installed | grep odhcpd-ipv6only > /dev/null
-if [ $? -ne 0 ]; then
-    echo "odhcpd-ipv6only is not installed."
+if opkg list-installed | grep -q odhcpd-ipv6only; then
+    printf "\033[32;1modhcpd-ipv6only already installed\033[0m\n"
+else
+    echo "Installed odhcpd-ipv6only"
     opkg install odhcpd-ipv6only
-    echo 'odhcpd-ipv6only installed'
 fi
 
 # Check for ppp
 # Проверяет наличие ppp
-opkg list-installed | grep ppp > /dev/null
-if [ $? -ne 0 ]; then
-    echo "ppp is not installed."
+if opkg list-installed | grep -q ppp; then
+    printf "\033[32;1mppp already installed\033[0m\n"
+else
+    echo "Installed ppp"
     opkg install ppp
-    echo 'ppp installed'
 fi
 
 # Check for ppp-mod-pppoe
 # Проверяет наличие ppp-mod-pppoe
-opkg list-installed | grep ppp-mod-pppoe > /dev/null
-if [ $? -ne 0 ]; then
-    echo "ppp-mod-pppoe is not installed."
+if opkg list-installed | grep -q ppp-mod-pppoe; then
+    printf "\033[32;1mppp-mod-pppoe already installed\033[0m\n"
+else
+    echo "Installed ppp-mod-pppoe"
     opkg install ppp-mod-pppoe
-    echo 'ppp-mod-pppoe installed'
 fi
 
 # Check for kmod-usb-ledtrig-usbport
 # Проверяет наличие kmod-usb-ledtrig-usbport
-opkg list-installed | grep kmod-usb-ledtrig-usbport > /dev/null
-if [ $? -ne 0 ]; then
-    echo "kmod-usb-ledtrig-usbport is not installed."
+if opkg list-installed | grep -q kmod-usb-ledtrig-usbport; then
+    printf "\033[32;1mkmod-usb-ledtrig-usbportc already installed\033[0m\n"
+else
+    echo "Installed kmod-usb-ledtrig-usbport"
     opkg install kmod-usb-ledtrig-usbport
-    echo 'kmod-usb-ledtrig-usbport installed'
 fi
 
 # Установим пакет dnsmasq-full. По дефолту в OpenWrt идёт урезанный dnsmasq для экономии места.
 cd /tmp/ && opkg download dnsmasq-full
 opkg remove dnsmasq && opkg install dnsmasq-full --cache /tmp/
 mv /etc/config/dhcp-opkg /etc/config/dhcp
+
+# Установим пакет для создания Mesh-сети.
+if ["$MESH" = "y"]; then
+    cd /tmp/ && opkg download wpad-mesh-mbedtls
+    if opkg list-installed | grep -q wpad-basic-mbedtls; then
+        opkg remove wpad-basic-mbedtls
+    fi
+    opkg install wpad-mesh-mbedtls --cache /tmp/
+fi
+
+# Tunnel
+if ["$TUN" = "y"]; then
+    cd /tmp
+    wget https://raw.githubusercontent.com/arhitru/bypassing-locks-with-OpenWRT/main/getdomains-install-outline.sh -O getdomains-install-outline.sh
+    chmod +x getdomains-install-outline.sh
+    ./getdomains-install-outline.sh
+fi
