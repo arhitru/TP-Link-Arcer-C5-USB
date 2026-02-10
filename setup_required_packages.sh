@@ -108,7 +108,7 @@ if ["$TUN" = "y"]; then
 fi
 
 # Настройка IPTV
-if  uci show firewall | grep -q "@rule.*name='Allow-IGMP'"; then
+if  uci show firewall | grep -q "option name 'Allow-IGMP'"; then
     uci add firewall rule
     uci set firewall.@rule[-1]=rule
     uci set firewall.@rule[-1].name='Allow-IGMP'
