@@ -6,7 +6,12 @@ source /etc/os-release
 printf "\033[34;1mModel: $MODEL\033[0m\n"
 printf "\033[34;1mVersion: $OPENWRT_RELEASE\033[0m\n"
 
-VERSION_ID=$(echo $VERSION | awk -F. '{print $1}')
+if [ -f /etc/os-release ]; then
+    VERSION=$(grep 'VERSION=' /etc/os-release | cut -d'"' -f2)
+    VERSION_ID=$(echo $VERSION | awk -F. '{print $1}')
+else
+    VERSION_ID=0  # Значение по умолчанию для старых версий
+fi
 
 printf "\033[31;1mAll actions performed here cannot be rolled back automatically.\033[0m\n"
 
@@ -111,14 +116,6 @@ if [ "$MESH" = "y" ]; then
     fi
 fi
 
-# Tunnel
-if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
-    cd /tmp
-    wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/getdomains-install-outline.sh -O getdomains-install-outline.sh
-    chmod +x getdomains-install-outline.sh
-    ./getdomains-install-outline.sh
-fi
-
 # Настройка IPTV
 if ! uci show firewall | grep -q "\.name='Allow-IGMP'"; then
     echo "Adding firewall rule for IGMP..."
@@ -151,4 +148,12 @@ if opkg list-installed | grep -q igmpproxy; then
 else
     echo "Installed igmpproxy"
     opkg install igmpproxy
+fi
+
+# Tunnel
+if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
+    cd /tmp
+    wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/getdomains-install-outline.sh -O getdomains-install-outline.sh
+    chmod +x getdomains-install-outline.sh
+    ./getdomains-install-outline.sh "$VERSION_ID"
 fi
