@@ -12,6 +12,7 @@ if [ -f /etc/os-release ]; then
 else
     VERSION_ID=0  # Значение по умолчанию для старых версий
 fi
+export VERSION_ID=$VERSION_ID
 
 printf "\033[31;1mAll actions performed here cannot be rolled back automatically.\033[0m\n"
 
@@ -155,5 +156,5 @@ if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
     cd /tmp
     wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/getdomains-install-outline.sh -O getdomains-install-outline.sh
     chmod +x getdomains-install-outline.sh
-    ./getdomains-install-outline.sh "$VERSION_ID" 24
+    ./getdomains-install-outline.sh
 fi
