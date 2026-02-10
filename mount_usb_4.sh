@@ -25,7 +25,6 @@ mkfs.ext4 -L "data" ${DISK}3
 echo "Созданные разделы:"
 parted -s ${DISK} print
 echo ""
-echo "Информация о файловых системах:"
 
 # Configure the extroot mount entry.
 eval $(block info | grep -o -e 'MOUNT="\S*/overlay"')
