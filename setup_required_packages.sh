@@ -81,17 +81,22 @@ else
 fi
 
 # Установим пакет dnsmasq-full. По дефолту в OpenWrt идёт урезанный dnsmasq для экономии места.
-cd /tmp/ && opkg download dnsmasq-full
-opkg remove dnsmasq && opkg install dnsmasq-full --cache /tmp/
-mv /etc/config/dhcp-opkg /etc/config/dhcp
+if opkg list-installed | grep -q dnsmasq-full; then
+    printf "\033[32;1mdnsmasq-full already installed\033[0m\n"
+else
+    echo "Installed dnsmasq-full"
+    cd /tmp/ && opkg download dnsmasq-full
+    opkg remove dnsmasq && opkg install dnsmasq-full --cache /tmp/
+    mv /etc/config/dhcp-opkg /etc/config/dhcp
+fi
 
 # Установим пакет для создания Mesh-сети.
 if ["$MESH" = "y"]; then
-    cd /tmp/ && opkg download wpad-mesh-mbedtls
+    cd /tmp/ && opkg download wpad-mesh-openssl
     if opkg list-installed | grep -q wpad-basic-mbedtls; then
         opkg remove wpad-basic-mbedtls
     fi
-    opkg install wpad-mesh-mbedtls --cache /tmp/
+    opkg install wpad-mesh-openssl --cache /tmp/
 fi
 
 # Tunnel
