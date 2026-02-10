@@ -10,15 +10,30 @@ VERSION_ID=$(echo $VERSION | awk -F. '{print $1}')
 
 printf "\033[31;1mAll actions performed here cannot be rolled back automatically.\033[0m\n"
 
-while [ "$MESH" != "y" ] && [ "$MESH" != "n" ]; do
+while true; do
     echo "Install MESH package? [y/n]: "
     read MESH
+    case "$MESH" in
+        [Yy]) MESH="y"; break;;
+        [Nn]) MESH="n"; break;;
+        *) echo "Please answer y or n.";;
+    esac
 done
 
-while [ "$TUN" != "y" ] && [ "$TUN" != "n" ]; do
+while true; do
     echo "Do you want to set up an Outline VPN? [y/n]: "
     read TUN
+    case "$TUN" in
+        [Yy]) TUN="y"; break;;
+        [Nn]) TUN="n"; break;;
+        *) echo "Please answer y or n.";;
+    esac
 done
+
+# while [ "$TUN" != "y" ] && [ "$TUN" != "n" ]; do
+#     echo "Do you want to set up an Outline VPN? [y/n]: "
+#     read TUN
+# done
 
 ## **Сохранение списков программных пакетов при загрузке**
 # Сохранение статуса установленных пакетов opkg в /usr/lib/opkg/lists хранящемся в extroot, а не в RAM, экономит некоторую оперативную память и сохраняет списки пакетов доступными после перезагрузки.
@@ -91,7 +106,7 @@ else
 fi
 
 # Установим пакет для создания Mesh-сети.
-if ["$MESH" = "y"]; then
+if [ "$MESH" = "y" ]; then
     cd /tmp/ && opkg download wpad-mesh-openssl
     if opkg list-installed | grep -q wpad-basic-mbedtls; then
         opkg remove wpad-basic-mbedtls
@@ -100,7 +115,7 @@ if ["$MESH" = "y"]; then
 fi
 
 # Tunnel
-if ["$TUN" = "y"] || ["$TUN" = "Y"]; then
+if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
     cd /tmp
     wget https://raw.githubusercontent.com/arhitru/bypassing-locks-with-OpenWRT/main/getdomains-install-outline.sh -O getdomains-install-outline.sh
     chmod +x getdomains-install-outline.sh
