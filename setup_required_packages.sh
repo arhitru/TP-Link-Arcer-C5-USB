@@ -91,7 +91,7 @@ else
 fi
 
 # Установим пакет для создания Mesh-сети.
-if ["$MESH" = "y"]; then
+if ["$MESH" = "y"] || ["$MESH" = "Y"]; then
     cd /tmp/ && opkg download wpad-mesh-openssl
     if opkg list-installed | grep -q wpad-basic-mbedtls; then
         opkg remove wpad-basic-mbedtls
@@ -100,7 +100,7 @@ if ["$MESH" = "y"]; then
 fi
 
 # Tunnel
-if ["$TUN" = "y"]; then
+if ["$TUN" = "y"] || ["$TUN" = "Y"]; then
     cd /tmp
     wget https://raw.githubusercontent.com/arhitru/bypassing-locks-with-OpenWRT/main/getdomains-install-outline.sh -O getdomains-install-outline.sh
     chmod +x getdomains-install-outline.sh
@@ -117,7 +117,7 @@ if  uci show firewall | grep -q "option name 'Allow-IGMP'"; then
     uci set firewall.@rule[-1].target='ACCEPT'
     uci commit
 fi
-if  uci show firewall | grep -q "@rule.*name='Allow-IPTV-IGMPPROXY'"; then
+if  uci show firewall | grep -q "option name 'Allow-IPTV-IGMPPROXY'"; then
     uci add firewall rule
     uci set firewall.@rule[-1]=rule
     uci set firewall.@rule[-1].name='Allow-IPTV-IGMPPROXY'
