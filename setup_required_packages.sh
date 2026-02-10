@@ -30,11 +30,6 @@ while true; do
     esac
 done
 
-# while [ "$TUN" != "y" ] && [ "$TUN" != "n" ]; do
-#     echo "Do you want to set up an Outline VPN? [y/n]: "
-#     read TUN
-# done
-
 ## **Сохранение списков программных пакетов при загрузке**
 # Сохранение статуса установленных пакетов opkg в /usr/lib/opkg/lists хранящемся в extroot, а не в RAM, экономит некоторую оперативную память и сохраняет списки пакетов доступными после перезагрузки.
 sed -i -r -e "s/^(lists_dir\sext\s).*/\1\/usr\/lib\/opkg\/lists/" /etc/opkg.conf
@@ -123,16 +118,16 @@ if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
 fi
 
 # Настройка IPTV
-if  uci show firewall | grep -q "option name 'Allow-IGMP'"; then
+if ! uci get firewall.@rule 2>/dev/null | grep -q "option name 'Allow-IGMP'"; then
     uci add firewall rule
     uci set firewall.@rule[-1]=rule
     uci set firewall.@rule[-1].name='Allow-IGMP'
     uci set firewall.@rule[-1].src='wan'
     uci set firewall.@rule[-1].proto='igmp'
     uci set firewall.@rule[-1].target='ACCEPT'
-    uci commit
+    uci commit firewall
 fi
-if  uci show firewall | grep -q "option name 'Allow-IPTV-IGMPPROXY'"; then
+if ! uci get firewall.@rule 2>/dev/null | grep -q "Allow-IPTV-IGMPPROXY"; then
     uci add firewall rule
     uci set firewall.@rule[-1]=rule
     uci set firewall.@rule[-1].name='Allow-IPTV-IGMPPROXY'
@@ -141,7 +136,7 @@ if  uci show firewall | grep -q "option name 'Allow-IPTV-IGMPPROXY'"; then
     uci set firewall.@rule[-1].dest_ip='224.0.0.0/4'
     uci set firewall.@rule[-1].proto='udp'
     uci set firewall.@rule[-1].target='ACCEPT'
-    uci commit
+    uci commit firewall
 fi
 if opkg list-installed | grep -q igmpproxy; then
     printf "\033[32;1migmpproxy already installed\033[0m\n"
