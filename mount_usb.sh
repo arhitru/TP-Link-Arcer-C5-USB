@@ -42,48 +42,67 @@ count_existing_partitions() {
     echo "$count"
 }
 
-# Функция для быстрой проверки (основная)
-quick_check() {
+# Простая и надежная проверка разметки
+check_partitions() {
     local disk="$1"
     
-    echo "Быстрая проверка разметки..."
+    echo "Проверка разметки диска $disk..."
     
     # Проверяем наличие parted
     if ! command -v parted >/dev/null 2>&1; then
-        echo "  ⚠️ Утилита parted не найдена"
-        echo "false"
+        echo "  ⚠️ Утилита parted не найдена, проверяю наличие разделов..."
+        local count=0
+        for i in 1 2 3 4; do
+            if [ -b "${disk}${i}" ]; then
+                count=$((count + 1))
+                echo "  Обнаружен раздел ${disk}${i}"
+            fi
+        done
+        
+        if [ "$count" -eq 0 ]; then
+            echo "  ❌ На диске нет разделов"
+            echo "0"
+        else
+            echo "  Найдено $count разделов"
+            echo "$count"
+        fi
         return
     fi
     
-    # Проверяем наличие GPT
-    if ! parted -s "$disk" print 2>/dev/null | grep -q "Partition Table:.*gpt"; then
-        echo "  ❌ Таблица разделов не GPT"
-        echo "false"
-        return
-    fi
-    
-    # Получаем список разделов
-    local partitions=$(parted -s "$disk" print 2>/dev/null | awk 'NR > 7 && /^ [0-9]/ {print $1 " " $6 " " $5}')
-    
-    if [ -z "$partitions" ]; then
-        echo "  Диск не размечен"
+    # Проверяем таблицу разделов
+    if ! parted -s "$disk" print >/dev/null 2>&1; then
+        echo "  ❌ Не удалось прочитать таблицу разделов"
         echo "0"
         return
     fi
     
-    # Проверяем последовательно разделы
+    # Получаем информацию о разделах
+    local parted_output=$(parted -s "$disk" print 2>/dev/null)
+    
+    # Проверяем, что таблица GPT
+    if ! echo "$parted_output" | grep -q "Partition Table:.*gpt"; then
+        echo "  ❌ Таблица разделов не GPT"
+        echo "0"
+        return
+    fi
+    
+    # Извлекаем информацию о разделах
     local valid_count=0
+    local max_part_num=0
     
-    # Используем файл для накопления результатов
-    local result_file=$(mktemp /tmp/partcheck.XXXXXX)
-    
-    echo "$partitions" | while read -r num name fstype; do
+    # Обрабатываем каждую строку с информацией о разделе
+    echo "$parted_output" | awk 'NR > 7 && /^ [0-9]/ {print $1 " " $6 " " $5}' | while read -r num name fstype; do
         if [ "$num" -ge 1 ] && [ "$num" -le 4 ]; then
+            # Обновляем максимальный номер раздела
+            if [ "$num" -gt "$max_part_num" ]; then
+                max_part_num="$num"
+            fi
+            
             case "$num" in
                 1)
                     if [ "$name" = "extroot" ] && echo "$fstype" | grep -q "ext4"; then
                         echo "  ✅ Раздел 1: $name ($fstype) - корректный"
-                        echo "1" >> "$result_file"
+                        valid_count=$((valid_count + 1))
                     else
                         echo "  ❌ Раздел 1: $name ($fstype) - ожидается: extroot, ext4"
                     fi
@@ -91,7 +110,7 @@ quick_check() {
                 2)
                     if [ "$name" = "swap" ] && echo "$fstype" | grep -q -E "swap|linux-swap"; then
                         echo "  ✅ Раздел 2: $name ($fstype) - корректный"
-                        echo "1" >> "$result_file"
+                        valid_count=$((valid_count + 1))
                     else
                         echo "  ❌ Раздел 2: $name ($fstype) - ожидается: swap, swap"
                     fi
@@ -99,10 +118,10 @@ quick_check() {
                 3)
                     if [ "$name" = "data" ] && echo "$fstype" | grep -q "ext4"; then
                         echo "  ✅ Раздел 3: $name ($fstype) - корректный"
-                        echo "1" >> "$result_file"
+                        valid_count=$((valid_count + 1))
                     elif [ "$name" = "extra" ] && echo "$fstype" | grep -q "ext4"; then
                         echo "  ✅ Раздел 3: $name ($fstype) - корректный"
-                        echo "1" >> "$result_file"
+                        valid_count=$((valid_count + 1))
                     else
                         echo "  ❌ Раздел 3: $name ($fstype) - ожидается: data или extra, ext4"
                     fi
@@ -110,146 +129,42 @@ quick_check() {
                 4)
                     if [ "$name" = "extra" ] && echo "$fstype" | grep -q "ext4"; then
                         echo "  ✅ Раздел 4: $name ($fstype) - корректный"
-                        echo "1" >> "$result_file"
+                        valid_count=$((valid_count + 1))
                     else
                         echo "  ❌ Раздел 4: $name ($fstype) - ожидается: extra, ext4"
                     fi
                     ;;
             esac
-        else
-            echo "  ⚠️  Раздел $num: пропускается (поддерживаются только разделы 1-4)"
         fi
     done
     
-    # Подсчитываем результаты
-    if [ -f "$result_file" ]; then
-        valid_count=$(wc -l < "$result_file" 2>/dev/null)
-        # Удаляем пробелы и переводы строк
-        valid_count=$(echo "$valid_count" | tr -d '[:space:]')
-        rm -f "$result_file"
-    fi
-    
-    # Проверяем непрерывность последовательности
-    local continuous="true"
-    if [ "$valid_count" -gt 0 ]; then
-        for i in $(seq 1 $valid_count); do
-            if [ ! -b "${disk}${i}" ]; then
-                continuous="false"
-                break
-            fi
-        done
-    fi
-    
-    if [ "$valid_count" -eq 0 ]; then
-        echo "  ❌ Не найдено корректных разделов"
-        echo "false"
-    elif [ "$continuous" = "false" ]; then
-        echo "  ⚠️  Нарушена последовательность разделов"
-        echo "$valid_count"
-    else
-        echo "  ✅ Найдено $valid_count корректных разделов"
-        echo "$valid_count"
-    fi
-}
-
-# Функция для автоматического определения конфигурации
-auto_detect_layout() {
-    local disk="$1"
-    
-    echo "Автоматическое определение конфигурации диска..."
-    
-    # Получаем информацию из parted
-    if ! command -v parted >/dev/null 2>&1; then
-        echo "  ⚠️ Parted не найден, использую простой подсчет"
-        local count=$(count_existing_partitions "$disk")
-        echo "$count"
-        return
-    fi
-    
-    local parted_info=$(parted -s "$disk" print 2>/dev/null)
-    local gpt_check=$(echo "$parted_info" | grep -c "Partition Table:.*gpt")
-    
-    if [ "$gpt_check" -eq 0 ]; then
-        echo "  ❌ Таблица разделов не GPT"
-        echo "false"
-        return
-    fi
-    
-    # Извлекаем информацию о разделах
-    local partitions=$(echo "$parted_info" | awk 'NR > 7 && /^ [0-9]/ {print $1 "|" $6 "|" $5}')
-    
-    if [ -z "$partitions" ]; then
-        echo "  Диск не размечен"
-        echo "0"
-        return
-    fi
-    
-    # Используем временные файлы для каждого раздела
-    local part1_file=$(mktemp /tmp/part1.XXXXXX)
-    local part2_file=$(mktemp /tmp/part2.XXXXXX)
-    local part3_file=$(mktemp /tmp/part3.XXXXXX)
-    local part4_file=$(mktemp /tmp/part4.XXXXXX)
-    
-    echo "$partitions" | while IFS='|' read -r num name fstype; do
-        case "$num" in
-            1)
-                if [ "$name" = "extroot" ] || echo "$fstype" | grep -q "ext4"; then
-                    echo "extroot" > "$part1_file"
-                fi
-                ;;
-            2)
-                if [ "$name" = "swap" ] || echo "$fstype" | grep -q -E "swap|linux-swap"; then
-                    echo "swap" > "$part2_file"
-                fi
-                ;;
-            3)
-                if [ "$name" = "data" ] || [ "$name" = "extra" ] || echo "$fstype" | grep -q "ext4"; then
-                    echo "data" > "$part3_file"
-                fi
-                ;;
-            4)
-                if [ "$name" = "extra" ] || echo "$fstype" | grep -q "ext4"; then
-                    echo "extra" > "$part4_file"
-                fi
-                ;;
-        esac
+    # Проверяем непрерывность разделов
+    local continuous=true
+    local i=1
+    while [ $i -le $max_part_num ]; do
+        if [ ! -b "${disk}${i}" ]; then
+            continuous=false
+            break
+        fi
+        i=$((i + 1))
     done
     
-    # Ждем завершения пайплайна
-    wait
+    echo "  Найдено корректных разделов: $valid_count"
+    echo "  Всего разделов в таблице: $max_part_num"
     
-    # Определяем конфигурацию
-    local part_count=0
-    
-    if [ -s "$part1_file" ]; then
-        part_count=$((part_count + 1))
-        echo "  Раздел 1: $(cat "$part1_file")"
-    fi
-    
-    if [ -s "$part2_file" ]; then
-        part_count=$((part_count + 1))
-        echo "  Раздел 2: $(cat "$part2_file")"
-    fi
-    
-    if [ -s "$part3_file" ]; then
-        part_count=$((part_count + 1))
-        echo "  Раздел 3: $(cat "$part3_file")"
-    fi
-    
-    if [ -s "$part4_file" ]; then
-        part_count=$((part_count + 1))
-        echo "  Раздел 4: $(cat "$part4_file")"
-    fi
-    
-    # Удаляем временные файлы
-    rm -f "$part1_file" "$part2_file" "$part3_file" "$part4_file"
-    
-    if [ "$part_count" -eq 0 ]; then
-        echo "  ❌ Не удалось определить конфигурацию"
-        echo "false"
+    # Возвращаем результат
+    if [ "$valid_count" -eq 0 ]; then
+        echo "  ❌ Не найдено корректных разделов"
+        echo "0"
+    elif [ "$valid_count" -eq "$max_part_num" ] && [ "$continuous" = "true" ]; then
+        echo "  ✅ Все разделы корректны и непрерывны"
+        echo "$valid_count"
+    elif [ "$valid_count" -gt 0 ]; then
+        echo "  ⚠️  Найдено $valid_count корректных разделов"
+        echo "$valid_count"
     else
-        echo "  ✅ Обнаружена конфигурация с $part_count разделами"
-        echo "$part_count"
+        echo "  ❌ Конфигурация не распознана"
+        echo "0"
     fi
 }
 
@@ -476,10 +391,11 @@ main() {
     else
         echo "На диске обнаружены разделы ($EXISTING_PARTS). Проверяю разметку..."
         
-        # Используем быструю проверку
-        CHECK_RESULT=$(quick_check "$DISK")
+        # Используем проверку
+        CHECK_RESULT=$(check_partitions "$DISK")
         
-        if [ "$CHECK_RESULT" != "false" ] && [ -n "$CHECK_RESULT" ] && [ "$CHECK_RESULT" -gt 0 ]; then
+        # Проверяем результат
+        if [ -n "$CHECK_RESULT" ] && [ "$CHECK_RESULT" -gt 0 ]; then
             PART_COUNT="$CHECK_RESULT"
             echo ""
             echo "✅ Существующая разметка корректна. Использую её."
@@ -501,27 +417,6 @@ main() {
         else
             echo ""
             echo "❌ Существующая разметка некорректна или неполная."
-            
-            # Пробуем автоматическое определение как запасной вариант
-            if [ "$CHECK_RESULT" = "false" ]; then
-                echo "Пробую автоматическое определение..."
-                ALT_CHECK=$(auto_detect_layout "$DISK")
-                
-                if [ "$ALT_CHECK" != "false" ] && [ -n "$ALT_CHECK" ] && [ "$ALT_CHECK" -gt 0 ]; then
-                    PART_COUNT="$ALT_CHECK"
-                    echo ""
-                    echo "⚠️  Автоматическое определение: найдено $PART_COUNT разделов"
-                    echo "Использую эту конфигурацию..."
-                    
-                    configure_fstab "$DISK" "$PART_COUNT"
-                    
-                    # Завершаем работу после настройки
-                    echo ""
-                    echo "Настройка завершена на основе автоматического определения."
-                    echo "Рекомендуется проверить корректность настроек."
-                    exit 0
-                fi
-            fi
             
             # Автоматический режим для скриптов
             if [ -t 0 ]; then
@@ -563,7 +458,7 @@ main() {
     echo "Настройка fstab завершена успешно!"
     
     # Автоматическая перезагрузка только при изменении разметки
-    if [ "$EXISTING_PARTS" -eq 0 ] || [ "$CHECK_RESULT" = "false" ]; then
+    if [ "$EXISTING_PARTS" -eq 0 ] || [ "$CHECK_RESULT" = "0" ]; then
         echo "Перезагружаюсь для применения изменений..."
         sleep 3
         reboot
