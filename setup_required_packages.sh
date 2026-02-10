@@ -113,7 +113,6 @@ if  uci show firewall | grep -q "option name 'Allow-IGMP'"; then
     uci set firewall.@rule[-1]=rule
     uci set firewall.@rule[-1].name='Allow-IGMP'
     uci set firewall.@rule[-1].src='wan'
-    uci set firewall.@rule[-1].dest='*'
     uci set firewall.@rule[-1].proto='igmp'
     uci set firewall.@rule[-1].target='ACCEPT'
     uci commit
