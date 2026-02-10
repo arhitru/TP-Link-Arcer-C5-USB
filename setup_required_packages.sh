@@ -33,12 +33,14 @@ while true; do
         *) echo "Please answer y or n.";;
     esac
 done
+
 if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
     export TUNNEL="tun2socks"
     # Считывает пользовательскую переменную для конфигурации Outline (Shadowsocks)
     read -p "Enter Outline (Shadowsocks) Config (format ss://base64coded@HOST:PORT/?outline=1): " OUTLINECONF
     export  OUTLINECONF=$OUTLINECONF
-    echo "Configure DNSCrypt2 or Stubby? It does matter if your ISP is spoofing DNS requests"
+
+    printf "\033[33mConfigure DNSCrypt2 or Stubby? It does matter if your ISP is spoofing DNS requests\033[0m\n"
     echo "Select:"
     echo "1) No [Default]"
     echo "2) DNSCrypt2 (10.7M)"
@@ -68,7 +70,8 @@ if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
             ;;
         esac
     done
-    echo "Choose you country"
+
+    printf "\033[33mChoose you country\033[0m\n"
     echo "Select:"
     echo "1) Russia inside. You are inside Russia"
     echo "2) Russia outside. You are outside of Russia, but you need access to Russian resources"
@@ -105,6 +108,13 @@ if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
             ;;
         esac
     done
+    # Ask user to use Outline as default gateway
+    # Задает вопрос пользователю о том, следует ли использовать Outline в качестве шлюза по умолчанию
+    while [ "$DEFAULT_GATEWAY" != "y" ] && [ "$DEFAULT_GATEWAY" != "n" ]; do
+        read -p "Use Outline as default gateway? [y/n]: " DEFAULT_GATEWAY
+        export OUTLINE_DEFAULT_GATEWAY=$DEFAULT_GATEWAY
+    done
+
 fi
 
 ## **Сохранение списков программных пакетов при загрузке**
