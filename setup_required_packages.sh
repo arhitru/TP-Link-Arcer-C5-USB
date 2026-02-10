@@ -108,22 +108,30 @@ if ["$TUN" = "y"]; then
 fi
 
 # Настройка IPTV
-        uci add firewall rule
-        uci set firewall.@rule[-1]=rule
-        uci set firewall.@rule[-1].name='Allow-IGMP'
-        uci set firewall.@rule[-1].src='wan'
-        uci set firewall.@rule[-1].dest='*'
-        uci set firewall.@rule[-1].proto='igmp'
-        uci set firewall.@rule[-1].target='ACCEPT'
-        uci commit
-        uci add firewall rule
-        uci set firewall.@rule[-1]=rule
-        uci set firewall.@rule[-1].name='Allow-IPTV-IGMPPROXY'
-        uci set firewall.@rule[-1].src='wan'
-        uci set firewall.@rule[-1].dest='lan'
-        uci set firewall.@rule[-1].dest_ip='224.0.0.0/4'
-        uci set firewall.@rule[-1].proto='udp'
-        uci set firewall.@rule[-1].target='ACCEPT'
-        uci commit
-
-opkg install igmpproxy
+if  uci show firewall | grep -q "@rule.*name='Allow-IGMP'"; then
+    uci add firewall rule
+    uci set firewall.@rule[-1]=rule
+    uci set firewall.@rule[-1].name='Allow-IGMP'
+    uci set firewall.@rule[-1].src='wan'
+    uci set firewall.@rule[-1].dest='*'
+    uci set firewall.@rule[-1].proto='igmp'
+    uci set firewall.@rule[-1].target='ACCEPT'
+    uci commit
+fi
+if  uci show firewall | grep -q "@rule.*name='Allow-IPTV-IGMPPROXY'"; then
+    uci add firewall rule
+    uci set firewall.@rule[-1]=rule
+    uci set firewall.@rule[-1].name='Allow-IPTV-IGMPPROXY'
+    uci set firewall.@rule[-1].src='wan'
+    uci set firewall.@rule[-1].dest='lan'
+    uci set firewall.@rule[-1].dest_ip='224.0.0.0/4'
+    uci set firewall.@rule[-1].proto='udp'
+    uci set firewall.@rule[-1].target='ACCEPT'
+    uci commit
+fi
+if opkg list-installed | grep -q igmpproxy; then
+    printf "\033[32;1migmpproxy already installed\033[0m\n"
+else
+    echo "Installed igmpproxy"
+    opkg install igmpproxy
+fi
