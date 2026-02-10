@@ -114,7 +114,7 @@ fi
 # Tunnel
 if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
     cd /tmp
-    wget https://raw.githubusercontent.com/arhitru/bypassing-locks-with-OpenWRT/main/getdomains-install-outline.sh -O getdomains-install-outline.sh
+    wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/getdomains-install-outline.sh -O getdomains-install-outline.sh
     chmod +x getdomains-install-outline.sh
     ./getdomains-install-outline.sh
 fi
