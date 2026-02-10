@@ -10,9 +10,18 @@ VERSION_ID=$(echo $VERSION | awk -F. '{print $1}')
 
 printf "\033[31;1mAll actions performed here cannot be rolled back automatically.\033[0m\n"
 
+# while true; do
+#     echo "Install MESH package? [y/n]: "
+#     read MESH
+#     case "$MESH" in
+#         [Yy]) MESH="y"; break;;
+#         [Nn]) MESH="n"; break;;
+#         *) echo "Please answer y or n.";;
+#     esac
+# done
+
 while true; do
-    echo "Install MESH package? [y/n]: "
-    read MESH
+    read -p "Install MESH package? [y/n]: " MESH
     case "$MESH" in
         [Yy]) MESH="y"; break;;
         [Nn]) MESH="n"; break;;
