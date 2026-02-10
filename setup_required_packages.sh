@@ -102,11 +102,15 @@ fi
 
 # Установим пакет для создания Mesh-сети.
 if [ "$MESH" = "y" ]; then
-    cd /tmp/ && opkg download wpad-mesh-openssl
-    if opkg list-installed | grep -q wpad-basic-mbedtls; then
-        opkg remove wpad-basic-mbedtls
+    if opkg list-installed | grep -q wpad-mesh-openssl; then
+        printf "\033[32;1mwpad-mesh-openssl already installed\033[0m\n"
+    else
+        cd /tmp/ && opkg download wpad-mesh-openssl
+        if opkg list-installed | grep -q wpad-basic-mbedtls; then
+            opkg remove wpad-basic-mbedtls
+        fi
+        opkg install wpad-mesh-openssl --cache /tmp/
     fi
-    opkg install wpad-mesh-openssl --cache /tmp/
 fi
 
 # Tunnel
