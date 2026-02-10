@@ -155,5 +155,5 @@ if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
     cd /tmp
     wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/getdomains-install-outline.sh -O getdomains-install-outline.sh
     chmod +x getdomains-install-outline.sh
-    ./getdomains-install-outline.sh "$VERSION_ID"
+    ./getdomains-install-outline.sh "$VERSION_ID" 24
 fi
