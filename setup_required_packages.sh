@@ -8,14 +8,6 @@ printf "\033[34;1mVersion: $OPENWRT_RELEASE\033[0m\n"
 
 VERSION_ID=$(echo $VERSION | awk -F. '{print $1}')
 
-if [ "$VERSION_ID" -ne 23 ] && [ "$VERSION_ID" -ne 24 ]; then
-    printf "\033[31;1mScript only support OpenWrt 23.05 and 24.10\033[0m\n"
-    echo "For OpenWrt 21.02 and 22.03 you can:"
-    echo "1) Use ansible https://github.com/itdoginfo/domain-routing-openwrt"
-    echo "2) Configure manually. Old manual: https://itdog.info/tochechnaya-marshrutizaciya-na-routere-s-openwrt-wireguard-i-dnscrypt/"
-    exit 1
-fi
-
 printf "\033[31;1mAll actions performed here cannot be rolled back automatically.\033[0m\n"
 
 while [ "$MESH" != "y" ] && [ "$MESH" != "n" ]; do
@@ -109,3 +101,24 @@ if ["$TUN" = "y"]; then
     chmod +x getdomains-install-outline.sh
     ./getdomains-install-outline.sh
 fi
+
+# Настройка IPTV
+        uci add firewall rule
+        uci set firewall.@rule[-1]=rule
+        uci set firewall.@rule[-1].name='Allow-IGMP'
+        uci set firewall.@rule[-1].src='wan'
+        uci set firewall.@rule[-1].dest='*'
+        uci set firewall.@rule[-1].proto='igmp'
+        uci set firewall.@rule[-1].target='ACCEPT'
+        uci commit
+        uci add firewall rule
+        uci set firewall.@rule[-1]=rule
+        uci set firewall.@rule[-1].name='Allow-IPTV-IGMPPROXY'
+        uci set firewall.@rule[-1].src='wan'
+        uci set firewall.@rule[-1].dest='lan'
+        uci set firewall.@rule[-1].dest_ip='224.0.0.0/4'
+        uci set firewall.@rule[-1].proto='udp'
+        uci set firewall.@rule[-1].target='ACCEPT'
+        uci commit
+
+opkg install igmpproxy
