@@ -91,7 +91,7 @@ else
 fi
 
 # Установим пакет для создания Mesh-сети.
-if ["$MESH" = "y"] || ["$MESH" = "Y"]; then
+if ["$MESH" = "y"]; then
     cd /tmp/ && opkg download wpad-mesh-openssl
     if opkg list-installed | grep -q wpad-basic-mbedtls; then
         opkg remove wpad-basic-mbedtls
