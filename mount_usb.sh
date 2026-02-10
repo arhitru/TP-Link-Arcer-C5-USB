@@ -18,15 +18,13 @@ get_part_label() {
     fi
 }
 
-# Функция для определения размера диска (работает в OpenWrt)
+# Функция для определения размера диска
 get_disk_size() {
     local disk="$1"
     
-    # Пробуем разные методы определения размера
     if command -v blockdev >/dev/null 2>&1; then
         blockdev --getsize64 "$disk" 2>/dev/null
     elif [ -f "/sys/block/${disk##*/}/size" ]; then
-        # Читаем размер в секторах (обычно 512 байт)
         local sectors=$(cat "/sys/block/${disk##*/}/size" 2>/dev/null)
         if [ -n "$sectors" ]; then
             echo $((sectors * 512))
@@ -40,73 +38,117 @@ get_disk_size() {
     fi
 }
 
-# Функция для проверки существующих разделов
+# Функция для получения типа файловой системы раздела
+get_part_type() {
+    local part="$1"
+    if [ -b "$part" ] && blkid "$part" >/dev/null 2>&1; then
+        blkid -s TYPE -o value "$part" 2>/dev/null || echo ""
+    else
+        echo ""
+    fi
+}
+
+# Функция для проверки существующих разделов (исправленная)
 check_existing_partitions() {
     local disk="$1"
     local valid_layout=true
+    local found_extroot=false
+    local found_swap=false
+    local found_data=false
+    local found_extra=false
     
     echo "Проверяю существующую разметку диска $disk..."
     
-    # Проверяем каждый раздел от 1 до 4
-    local part_num=1
-    while [ $part_num -le 4 ]; do
-        local part="${disk}${part_num}"
+    # Проверяем все существующие разделы
+    for part in ${disk}[0-9]*; do
         if [ -b "$part" ]; then
             local label=$(get_part_label "$part")
+            local part_num=${part##*[^0-9]}
+            local part_type=$(get_part_type "$part")
             
-            echo "  Раздел $part: метка='$label'"
+            echo "  Раздел $part: метка='$label', тип='$part_type'"
             
-            # Проверяем соответствие меток ожидаемым
+            # Проверяем разделы по их номерам и меткам
             case "$part_num" in
                 1)
-                    if [ "$label" != "extroot" ]; then
-                        echo "    ⚠️  Неправильная метка для extroot раздела"
+                    if [ "$label" = "extroot" ] && [ "$part_type" = "ext4" ]; then
+                        found_extroot=true
+                        echo "    ✅ Корректный extroot раздел"
+                    else
+                        echo "    ❌ Неправильный extroot раздел (ожидается: метка=extroot, тип=ext4)"
                         valid_layout=false
                     fi
                     ;;
                 2)
-                    if [ "$label" != "swap" ]; then
-                        echo "    ⚠️  Неправильная метка для swap раздела"
+                    if [ "$label" = "swap" ] && [ "$part_type" = "swap" ]; then
+                        found_swap=true
+                        echo "    ✅ Корректный swap раздел"
+                    else
+                        echo "    ❌ Неправильный swap раздел (ожидается: метка=swap, тип=swap)"
                         valid_layout=false
                     fi
                     ;;
                 3)
-                    if [ "$label" != "data" ] && [ "$label" != "extra" ]; then
-                        echo "    ⚠️  Неправильная метка для data раздела"
+                    if [ "$label" = "data" ] && [ "$part_type" = "ext4" ]; then
+                        found_data=true
+                        echo "    ✅ Корректный data раздел"
+                    elif [ "$label" = "extra" ] && [ "$part_type" = "ext4" ]; then
+                        found_extra=true
+                        echo "    ✅ Корректный extra раздел"
+                    else
+                        echo "    ❌ Неправильный data раздел (ожидается: метка=data или extra, тип=ext4)"
                         valid_layout=false
                     fi
                     ;;
                 4)
-                    if [ "$label" != "extra" ]; then
-                        echo "    ⚠️  Неправильная метка для extra раздела"
+                    if [ "$label" = "extra" ] && [ "$part_type" = "ext4" ]; then
+                        found_extra=true
+                        echo "    ✅ Корректный extra раздел"
+                    else
+                        echo "    ❌ Неправильный extra раздел (ожидается: метка=extra, тип=ext4)"
                         valid_layout=false
                     fi
                     ;;
+                *)
+                    echo "    ⚠️  Неожиданный раздел $part_num (поддерживаются только разделы 1-4)"
+                    valid_layout=false
+                    ;;
             esac
-        elif [ $part_num -eq 1 ]; then
-            # Первый раздел обязателен
-            echo "  Отсутствует обязательный раздел ${disk}1"
-            valid_layout=false
         fi
-        
-        part_num=$((part_num + 1))
     done
     
-    # Проверяем, есть ли лишние разделы (>4)
-    for part in ${disk}[5-9]*; do
-        if [ -b "$part" ]; then
-            echo "  ⚠️  Обнаружен лишний раздел: $part"
-            valid_layout=false
-        fi
-    done
+    # Проверяем обязательные разделы
+    if [ "$found_extroot" = "false" ]; then
+        echo "  ❌ Отсутствует обязательный раздел extroot (${disk}1)"
+        valid_layout=false
+    fi
+    
+    # Определяем тип конфигурации на основе найденных разделов
+    if [ "$found_extroot" = "true" ] && [ "$found_swap" = "false" ] && [ "$found_data" = "false" ]; then
+        echo "  Обнаружена конфигурация: 1 раздел (только extroot)"
+        PART_COUNT=1
+    elif [ "$found_extroot" = "true" ] && [ "$found_swap" = "true" ] && [ "$found_data" = "false" ]; then
+        echo "  Обнаружена конфигурация: 2 раздела (extroot + swap)"
+        PART_COUNT=2
+    elif [ "$found_extroot" = "true" ] && [ "$found_swap" = "true" ] && [ "$found_data" = "true" ]; then
+        echo "  Обнаружена конфигурация: 3 раздела (extroot + swap + data)"
+        PART_COUNT=3
+    elif [ "$found_extroot" = "true" ] && [ "$found_swap" = "true" ] && [ "$found_data" = "true" ] && [ "$found_extra" = "true" ]; then
+        echo "  Обнаружена конфигурация: 4 раздела (extroot + swap + data + extra)"
+        PART_COUNT=4
+    else
+        echo "  ❌ Нераспознанная конфигурация разделов"
+        valid_layout=false
+        PART_COUNT=0
+    fi
     
     if [ "$valid_layout" = "true" ]; then
         echo "✅ Существующая разметка корректна"
+        echo "$PART_COUNT"  # Возвращаем количество разделов
     else
         echo "❌ Существующая разметка некорректна"
+        echo "false"
     fi
-    
-    echo "$valid_layout"
 }
 
 # Функция для подсчета существующих разделов
@@ -114,7 +156,6 @@ count_existing_partitions() {
     local disk="$1"
     local count=0
     
-    # Проверяем разделы от 1 до 9
     for i in 1 2 3 4 5 6 7 8 9; do
         if [ -b "${disk}${i}" ]; then
             count=$((count + 1))
@@ -151,6 +192,7 @@ create_new_partitions() {
         
         parted -s ${disk} mklabel gpt || error_exit "Ошибка создания GPT таблицы"
         parted -s ${disk} mkpart "extroot" ext4 2048s 100% || error_exit "Ошибка создания раздела"
+        sleep 1
         mkfs.ext4 -L "extroot" ${disk}1 || error_exit "Ошибка создания файловой системы"
         
     elif [ "$DISK_SIZE_GB" -lt 4 ]; then
@@ -161,9 +203,11 @@ create_new_partitions() {
         
         EXTROOT_END=$((DISK_SIZE_GB * 80 / 100))
         parted -s ${disk} mkpart "extroot" ext4 2048s ${EXTROOT_END}GB || error_exit "Ошибка создания extroot"
+        sleep 1
         mkfs.ext4 -L "extroot" ${disk}1 || error_exit "Ошибка создания файловой системы"
         
         parted -s ${disk} mkpart "swap" linux-swap ${EXTROOT_END}GB 100% || error_exit "Ошибка создания swap"
+        sleep 1
         mkswap -L "swap" ${disk}2 || error_exit "Ошибка создания swap"
         swapon ${disk}2 2>/dev/null || echo "Предупреждение: не удалось активировать swap"
         
@@ -174,13 +218,16 @@ create_new_partitions() {
         parted -s ${disk} mklabel gpt || error_exit "Ошибка создания GPT таблицы"
         
         parted -s ${disk} mkpart "extroot" ext4 2048s 2GB || error_exit "Ошибка создания extroot"
+        sleep 1
         mkfs.ext4 -L "extroot" ${disk}1 || error_exit "Ошибка создания файловой системы"
         
         parted -s ${disk} mkpart "swap" linux-swap 2GB 4GB || error_exit "Ошибка создания swap"
+        sleep 1
         mkswap -L "swap" ${disk}2 || error_exit "Ошибка создания swap"
         swapon ${disk}2 2>/dev/null || echo "Предупреждение: не удалось активировать swap"
         
         parted -s ${disk} mkpart "data" ext4 4GB 100% || error_exit "Ошибка создания data"
+        sleep 1
         mkfs.ext4 -L "data" ${disk}3 || error_exit "Ошибка создания файловой системы"
         
     else
@@ -190,18 +237,22 @@ create_new_partitions() {
         parted -s ${disk} mklabel gpt || error_exit "Ошибка создания GPT таблицы"
         
         parted -s ${disk} mkpart "extroot" ext4 2048s 4GB || error_exit "Ошибка создания extroot"
+        sleep 1
         mkfs.ext4 -L "extroot" ${disk}1 || error_exit "Ошибка создания файловой системы"
         
         parted -s ${disk} mkpart "swap" linux-swap 4GB 8GB || error_exit "Ошибка создания swap"
+        sleep 1
         mkswap -L "swap" ${disk}2 || error_exit "Ошибка создания swap"
         swapon ${disk}2 2>/dev/null || echo "Предупреждение: не удалось активировать swap"
         
         DATA_SIZE=$((DISK_SIZE_GB - 8))
         DATA_PART1_END=$((8 + DATA_SIZE / 2))
         parted -s ${disk} mkpart "data" ext4 8GB ${DATA_PART1_END}GB || error_exit "Ошибка создания data"
+        sleep 1
         mkfs.ext4 -L "data" ${disk}3 || error_exit "Ошибка создания файловой системы"
         
         parted -s ${disk} mkpart "extra" ext4 ${DATA_PART1_END}GB 100% || error_exit "Ошибка создания extra"
+        sleep 1
         mkfs.ext4 -L "extra" ${disk}4 || error_exit "Ошибка создания файловой системы"
     fi
     
@@ -329,18 +380,13 @@ main() {
         echo "На диске обнаружены разделы ($EXISTING_PARTS). Проверяю разметку..."
         
         # Проверяем корректность существующей разметки
-        if [ "$(check_existing_partitions "$DISK")" = "true" ]; then
+        CHECK_RESULT=$(check_existing_partitions "$DISK")
+        
+        if [ "$CHECK_RESULT" != "false" ] && [ -n "$CHECK_RESULT" ] && [ "$CHECK_RESULT" -gt 0 ]; then
+            PART_COUNT="$CHECK_RESULT"
             echo "✅ Существующая разметка корректна. Использую её."
-            
-            # Определяем количество корректных разделов
-            PART_COUNT=0
-            for i in 1 2 3 4; do
-                if [ -b "${DISK}${i}" ]; then
-                    PART_COUNT=$((PART_COUNT + 1))
-                fi
-            done
-            
             echo "Обнаружено $PART_COUNT корректных разделов"
+            
             configure_fstab "$DISK" "$PART_COUNT"
             
             # Проверяем, нужно ли копировать данные в extroot
@@ -360,6 +406,11 @@ main() {
             # Автоматический режим для скриптов
             if [ -t 0 ]; then
                 # Интерактивный режим (если есть терминал)
+                echo ""
+                echo "Текущая таблица разделов:"
+                parted -s "$DISK" print 2>/dev/null || echo "Не удалось отобразить таблицу разделов"
+                echo ""
+                
                 read -p "Переразметить диск? (Все данные будут удалены!) [y/N]: " CONFIRM
                 
                 if [ "$CONFIRM" = "y" ] || [ "$CONFIRM" = "Y" ]; then
@@ -395,7 +446,7 @@ main() {
     echo "Настройка fstab завершена успешно!"
     
     # Автоматическая перезагрузка только при изменении разметки
-    if [ "$EXISTING_PARTS" -eq 0 ] || [ "$(check_existing_partitions "$DISK")" != "true" ]; then
+    if [ "$EXISTING_PARTS" -eq 0 ] || [ "$CHECK_RESULT" = "false" ]; then
         echo "Перезагружаюсь для применения изменений..."
         sleep 2
         reboot
