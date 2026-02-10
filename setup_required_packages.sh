@@ -131,7 +131,8 @@ if ! uci get firewall.@rule 2>/dev/null | grep -q "option name 'Allow-IGMP'"; th
     uci set firewall.@rule[-1].target='ACCEPT'
     uci commit firewall
 fi
-if ! uci get firewall.@rule 2>/dev/null | grep -q "Allow-IPTV-IGMPPROXY"; then
+if ! uci show firewall | grep -q "\.name='Allow-IPTV-IGMPPROXY'"; then
+    echo "Adding firewall rule for IGMPPROXY..."
     uci add firewall rule
     uci set firewall.@rule[-1]=rule
     uci set firewall.@rule[-1].name='Allow-IPTV-IGMPPROXY'
@@ -141,6 +142,8 @@ if ! uci get firewall.@rule 2>/dev/null | grep -q "Allow-IPTV-IGMPPROXY"; then
     uci set firewall.@rule[-1].proto='udp'
     uci set firewall.@rule[-1].target='ACCEPT'
     uci commit firewall
+else
+    echo "Rule already exists, skipping..."
 fi
 if opkg list-installed | grep -q igmpproxy; then
     printf "\033[32;1migmpproxy already installed\033[0m\n"
