@@ -11,17 +11,33 @@ error_exit() {
 # Функция для получения метки раздела
 get_part_label() {
     local part="$1"
-    if blkid "$part" >/dev/null 2>&1; then
+    if [ -b "$part" ] && blkid "$part" >/dev/null 2>&1; then
         blkid -s LABEL -o value "$part" 2>/dev/null || echo ""
     else
         echo ""
     fi
 }
 
-# Функция для получения UUID раздела
-get_part_uuid() {
-    local part="$1"
-    blkid -s UUID -o value "$part" 2>/dev/null || echo ""
+# Функция для определения размера диска (работает в OpenWrt)
+get_disk_size() {
+    local disk="$1"
+    
+    # Пробуем разные методы определения размера
+    if command -v blockdev >/dev/null 2>&1; then
+        blockdev --getsize64 "$disk" 2>/dev/null
+    elif [ -f "/sys/block/${disk##*/}/size" ]; then
+        # Читаем размер в секторах (обычно 512 байт)
+        local sectors=$(cat "/sys/block/${disk##*/}/size" 2>/dev/null)
+        if [ -n "$sectors" ]; then
+            echo $((sectors * 512))
+        else
+            echo ""
+        fi
+    elif command -v fdisk >/dev/null 2>&1; then
+        fdisk -l "$disk" 2>/dev/null | grep -E "^Disk ${disk}:" | awk '{print $5}'
+    else
+        echo ""
+    fi
 }
 
 # Функция для проверки существующих разделов
@@ -31,11 +47,12 @@ check_existing_partitions() {
     
     echo "Проверяю существующую разметку диска $disk..."
     
-    # Проверяем каждый раздел
-    for part in ${disk}[0-9]*; do
+    # Проверяем каждый раздел от 1 до 4
+    local part_num=1
+    while [ $part_num -le 4 ]; do
+        local part="${disk}${part_num}"
         if [ -b "$part" ]; then
             local label=$(get_part_label "$part")
-            local part_num=${part##*[^0-9]}
             
             echo "  Раздел $part: метка='$label'"
             
@@ -65,15 +82,46 @@ check_existing_partitions() {
                         valid_layout=false
                     fi
                     ;;
-                *)
-                    echo "    ⚠️  Неожиданный раздел $part_num"
-                    valid_layout=false
-                    ;;
             esac
+        elif [ $part_num -eq 1 ]; then
+            # Первый раздел обязателен
+            echo "  Отсутствует обязательный раздел ${disk}1"
+            valid_layout=false
+        fi
+        
+        part_num=$((part_num + 1))
+    done
+    
+    # Проверяем, есть ли лишние разделы (>4)
+    for part in ${disk}[5-9]*; do
+        if [ -b "$part" ]; then
+            echo "  ⚠️  Обнаружен лишний раздел: $part"
+            valid_layout=false
         fi
     done
     
+    if [ "$valid_layout" = "true" ]; then
+        echo "✅ Существующая разметка корректна"
+    else
+        echo "❌ Существующая разметка некорректна"
+    fi
+    
     echo "$valid_layout"
+}
+
+# Функция для подсчета существующих разделов
+count_existing_partitions() {
+    local disk="$1"
+    local count=0
+    
+    # Проверяем разделы от 1 до 9
+    for i in 1 2 3 4 5 6 7 8 9; do
+        if [ -b "${disk}${i}" ]; then
+            count=$((count + 1))
+        fi
+    done
+    
+    echo "$count"
 }
 
 # Функция для создания новой разметки
@@ -82,8 +130,14 @@ create_new_partitions() {
     
     echo "Создаю новую разметку на диске $disk..."
     
-    # Получаем размер диска в байтах
-    DISK_SIZE_BYTES=$(blockdev --getsize64 "$disk") || error_exit "Не удалось определить размер диска"
+    # Получаем размер диска
+    DISK_SIZE_BYTES=$(get_disk_size "$disk") || error_exit "Не удалось определить размер диска"
+    
+    if [ -z "$DISK_SIZE_BYTES" ] || [ "$DISK_SIZE_BYTES" -eq 0 ]; then
+        error_exit "Не удалось определить размер диска"
+    fi
+    
+    # Конвертируем в гигабайты
     DISK_SIZE_GB=$((DISK_SIZE_BYTES / 1024 / 1024 / 1024))
     
     echo "Размер диска: ${DISK_SIZE_GB}GB"
@@ -111,7 +165,7 @@ create_new_partitions() {
         
         parted -s ${disk} mkpart "swap" linux-swap ${EXTROOT_END}GB 100% || error_exit "Ошибка создания swap"
         mkswap -L "swap" ${disk}2 || error_exit "Ошибка создания swap"
-        swapon ${disk}2 || echo "Предупреждение: не удалось активировать swap"
+        swapon ${disk}2 2>/dev/null || echo "Предупреждение: не удалось активировать swap"
         
     elif [ "$DISK_SIZE_GB" -lt 64 ]; then
         PART_COUNT=3
@@ -124,7 +178,7 @@ create_new_partitions() {
         
         parted -s ${disk} mkpart "swap" linux-swap 2GB 4GB || error_exit "Ошибка создания swap"
         mkswap -L "swap" ${disk}2 || error_exit "Ошибка создания swap"
-        swapon ${disk}2 || echo "Предупреждение: не удалось активировать swap"
+        swapon ${disk}2 2>/dev/null || echo "Предупреждение: не удалось активировать swap"
         
         parted -s ${disk} mkpart "data" ext4 4GB 100% || error_exit "Ошибка создания data"
         mkfs.ext4 -L "data" ${disk}3 || error_exit "Ошибка создания файловой системы"
@@ -140,7 +194,7 @@ create_new_partitions() {
         
         parted -s ${disk} mkpart "swap" linux-swap 4GB 8GB || error_exit "Ошибка создания swap"
         mkswap -L "swap" ${disk}2 || error_exit "Ошибка создания swap"
-        swapon ${disk}2 || echo "Предупреждение: не удалось активировать swap"
+        swapon ${disk}2 2>/dev/null || echo "Предупреждение: не удалось активировать swap"
         
         DATA_SIZE=$((DISK_SIZE_GB - 8))
         DATA_PART1_END=$((8 + DATA_SIZE / 2))
@@ -263,7 +317,7 @@ main() {
     echo "=== Настройка диска $DISK ==="
     
     # Проверяем существующие разделы
-    EXISTING_PARTS=$(lsblk -ln -o NAME "$DISK" | grep -c "${DISK##*/}[0-9]")
+    EXISTING_PARTS=$(count_existing_partitions "$DISK")
     
     if [ "$EXISTING_PARTS" -eq 0 ]; then
         echo "Диск не размечен. Создаю новую разметку..."
@@ -272,7 +326,7 @@ main() {
         copy_to_extroot "$DISK"
         
     else
-        echo "На диске обнаружены разделы. Проверяю разметку..."
+        echo "На диске обнаружены разделы ($EXISTING_PARTS). Проверяю разметку..."
         
         # Проверяем корректность существующей разметки
         if [ "$(check_existing_partitions "$DISK")" = "true" ]; then
@@ -280,8 +334,8 @@ main() {
             
             # Определяем количество корректных разделов
             PART_COUNT=0
-            for part in ${DISK}[0-9]*; do
-                if [ -b "$part" ]; then
+            for i in 1 2 3 4; do
+                if [ -b "${DISK}${i}" ]; then
                     PART_COUNT=$((PART_COUNT + 1))
                 fi
             done
@@ -290,20 +344,40 @@ main() {
             configure_fstab "$DISK" "$PART_COUNT"
             
             # Проверяем, нужно ли копировать данные в extroot
-            if [ -b "${DISK}1" ] && ! mountpoint -q "${MOUNT}"; then
+            # Ищем точку монтирования overlay
+            OVERLAY_MOUNT=$(block info | grep 'MOUNT="[^"]*/overlay"' | cut -d'"' -f2)
+            if [ -n "$OVERLAY_MOUNT" ] && [ -b "${DISK}1" ] && ! mountpoint -q "$OVERLAY_MOUNT" 2>/dev/null; then
+                MOUNT="$OVERLAY_MOUNT"
                 echo "Extroot еще не настроен. Копирую данные..."
                 copy_to_extroot "$DISK"
             else
-                echo "Extroot уже настроен. Пропускаю копирование данных."
+                echo "Extroot уже настроен или точка монтирования не найдена. Пропускаю копирование данных."
             fi
             
         else
             echo "❌ Существующая разметка некорректна или неполная."
-            echo "Переразмечаем диск. Все данные будут удалены!" 
-            echo "Переразмечаю диск..."
-            PART_COUNT=$(create_new_partitions "$DISK")
-            configure_fstab "$DISK" "$PART_COUNT"
-            copy_to_extroot "$DISK"
+            
+            # Автоматический режим для скриптов
+            if [ -t 0 ]; then
+                # Интерактивный режим (если есть терминал)
+                read -p "Переразметить диск? (Все данные будут удалены!) [y/N]: " CONFIRM
+                
+                if [ "$CONFIRM" = "y" ] || [ "$CONFIRM" = "Y" ]; then
+                    echo "Переразмечаю диск..."
+                    PART_COUNT=$(create_new_partitions "$DISK")
+                    configure_fstab "$DISK" "$PART_COUNT"
+                    copy_to_extroot "$DISK"
+                else
+                    echo "Отменено пользователем."
+                    exit 0
+                fi
+            else
+                # Автоматический режим (без терминала)
+                echo "Автоматический режим: переразмечаю диск..."
+                PART_COUNT=$(create_new_partitions "$DISK")
+                configure_fstab "$DISK" "$PART_COUNT"
+                copy_to_extroot "$DISK"
+            fi
         fi
     fi
     
@@ -315,7 +389,7 @@ main() {
     
     echo ""
     echo "Монтированные разделы:"
-    mount | grep "^$DISK" || echo "Нет смонтированных разделов с этого диска"
+    mount | grep "^$DISK" 2>/dev/null || echo "Нет смонтированных разделов с этого диска"
     
     echo ""
     echo "Настройка fstab завершена успешно!"
@@ -326,13 +400,8 @@ main() {
         sleep 2
         reboot
     else
-        echo "Для применения изменений в extroot требуется перезагрузка."
-        read -p "Перезагрузить сейчас? [y/N]: " REBOOT_NOW
-        if [ "$REBOOT_NOW" = "y" ] || [ "$REBOOT_NOW" = "Y" ]; then
-            echo "Перезагружаюсь..."
-            sleep 2
-            reboot
-        fi
+        echo "Изменения применены без переразметки."
+        echo "Для полного применения изменений в extroot может потребоваться перезагрузка."
     fi
 }
 
