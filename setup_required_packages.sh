@@ -122,7 +122,8 @@ if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
 fi
 
 # Настройка IPTV
-if ! uci get firewall.@rule 2>/dev/null | grep -q "option name 'Allow-IGMP'"; then
+if ! uci show firewall | grep -q "\.name='Allow-IGMP'"; then
+    echo "Adding firewall rule for IGMP..."
     uci add firewall rule
     uci set firewall.@rule[-1]=rule
     uci set firewall.@rule[-1].name='Allow-IGMP'
@@ -130,6 +131,8 @@ if ! uci get firewall.@rule 2>/dev/null | grep -q "option name 'Allow-IGMP'"; th
     uci set firewall.@rule[-1].proto='igmp'
     uci set firewall.@rule[-1].target='ACCEPT'
     uci commit firewall
+else
+    echo "Rule 'Allow-IGMP' already exists, skipping..."
 fi
 if ! uci show firewall | grep -q "\.name='Allow-IPTV-IGMPPROXY'"; then
     echo "Adding firewall rule for IGMPPROXY..."
@@ -143,7 +146,7 @@ if ! uci show firewall | grep -q "\.name='Allow-IPTV-IGMPPROXY'"; then
     uci set firewall.@rule[-1].target='ACCEPT'
     uci commit firewall
 else
-    echo "Rule already exists, skipping..."
+    echo "Rule 'Allow-IPTV-IGMPPROXY' already exists, skipping..."
 fi
 if opkg list-installed | grep -q igmpproxy; then
     printf "\033[32;1migmpproxy already installed\033[0m\n"
