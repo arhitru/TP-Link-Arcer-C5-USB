@@ -16,107 +16,6 @@ export VERSION_ID=$VERSION_ID
 
 printf "\033[31;1mAll actions performed here cannot be rolled back automatically.\033[0m\n"
 
-while true; do
-    read -p "Install MESH package? [y/n]: " MESH
-    case "$MESH" in
-        [Yy]) MESH="y"; break;;
-        [Nn]) MESH="n"; break;;
-        *) echo "Please answer y or n.";;
-    esac
-done
-
-while true; do
-    read -p "Do you want to set up an Outline VPN? [y/n]: " TUN
-    case "$TUN" in
-        [Yy]) TUN="y"; break;;
-        [Nn]) TUN="n"; break;;
-        *) echo "Please answer y or n.";;
-    esac
-done
-
-if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
-    export TUNNEL="tun2socks"
-    # Считывает пользовательскую переменную для конфигурации Outline (Shadowsocks)
-    read -p "Enter Outline (Shadowsocks) Config (format ss://base64coded@HOST:PORT/?outline=1): " OUTLINECONF
-    export  OUTLINECONF=$OUTLINECONF
-
-    printf "\033[33mConfigure DNSCrypt2 or Stubby? It does matter if your ISP is spoofing DNS requests\033[0m\n"
-    echo "Select:"
-    echo "1) No [Default]"
-    echo "2) DNSCrypt2 (10.7M)"
-    echo "3) Stubby (36K)"
-
-    while true; do
-    read -r -p '' DNS_RESOLVER
-        case $DNS_RESOLVER in 
-
-        1) 
-            echo "Skiped"
-            break
-            ;;
-
-        2)
-            export DNS_RESOLVER="DNSCRYPT"
-            break
-            ;;
-
-        3) 
-            export DNS_RESOLVER="STUBBY"
-            break
-            ;;
-
-        *)
-            echo "Choose from the following options"
-            ;;
-        esac
-    done
-
-    printf "\033[33mChoose you country\033[0m\n"
-    echo "Select:"
-    echo "1) Russia inside. You are inside Russia"
-    echo "2) Russia outside. You are outside of Russia, but you need access to Russian resources"
-    echo "3) Ukraine. uablacklist.net list"
-    echo "4) Skip script creation"
-
-    while true; do
-    read -r -p '' COUNTRY
-        case $COUNTRY in 
-
-        1) 
-            export COUNTRY="russia_inside"
-            break
-            ;;
-
-        2)
-            export COUNTRY="russia_outside"
-            break
-            ;;
-
-        3) 
-            export COUNTRY="ukraine"
-            break
-            ;;
-
-        4) 
-            echo "Skiped"
-            export COUNTRY=0
-            break
-            ;;
-
-        *)
-            echo "Choose from the following options"
-            ;;
-        esac
-    done
-    # Ask user to use Outline as default gateway
-    # Задает вопрос пользователю о том, следует ли использовать Outline в качестве шлюза по умолчанию
-    while [ "$DEFAULT_GATEWAY" != "y" ] && [ "$DEFAULT_GATEWAY" != "n" ]; do
-        read -p "Use Outline as default gateway? [y/n]: " DEFAULT_GATEWAY
-        export OUTLINE_DEFAULT_GATEWAY=$DEFAULT_GATEWAY
-    done
-
-fi
-
 ## **Сохранение списков программных пакетов при загрузке**
 # Сохранение статуса установленных пакетов opkg в /usr/lib/opkg/lists хранящемся в extroot, а не в RAM, экономит некоторую оперативную память и сохраняет списки пакетов доступными после перезагрузки.
 sed -i -r -e "s/^(lists_dir\sext\s).*/\1\/usr\/lib\/opkg\/lists/" /etc/opkg.conf
@@ -188,16 +87,14 @@ else
 fi
 
 # Установим пакет для создания Mesh-сети.
-if [ "$MESH" = "y" ]; then
-    if opkg list-installed | grep -q wpad-mesh-openssl; then
-        printf "\033[32;1mwpad-mesh-openssl already installed\033[0m\n"
-    else
-        cd /tmp/ && opkg download wpad-mesh-openssl
-        if opkg list-installed | grep -q wpad-basic-mbedtls; then
-            opkg remove wpad-basic-mbedtls
-        fi
-        opkg install wpad-mesh-openssl --cache /tmp/
+if opkg list-installed | grep -q wpad-mesh-openssl; then
+    printf "\033[32;1mwpad-mesh-openssl already installed\033[0m\n"
+else
+    cd /tmp/ && opkg download wpad-mesh-openssl
+    if opkg list-installed | grep -q wpad-basic-mbedtls; then
+        opkg remove wpad-basic-mbedtls
     fi
+    opkg install wpad-mesh-openssl --cache /tmp/
 fi
 
 # Настройка IPTV
@@ -232,12 +129,4 @@ if opkg list-installed | grep -q igmpproxy; then
 else
     echo "Installed igmpproxy"
     opkg install igmpproxy
-fi
-
-# Tunnel
-if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
-    cd /tmp
-    wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/getdomains-install-outline.sh -O getdomains-install-outline.sh
-    chmod +x getdomains-install-outline.sh
-    ./getdomains-install-outline.sh
 fi
