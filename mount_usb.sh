@@ -478,7 +478,7 @@ main() {
         
         # Используем быструю проверку
         # CHECK_RESULT=$(quick_check "$DISK")
-        CHECK_RESULT=$(quick_check "$DISK" | tail -n1) 
+        CHECK_RESULT=$(quick_check "$DISK" | tail -n1)  # Берем последнюю строку
         
         if [ "$CHECK_RESULT" != "false" ] && [ -n "$CHECK_RESULT" ] && [ "$CHECK_RESULT" -gt 0 ]; then
             PART_COUNT="$CHECK_RESULT"
