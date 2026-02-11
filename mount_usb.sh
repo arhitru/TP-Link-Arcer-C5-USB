@@ -355,18 +355,41 @@ cleanup_old_fstab_entries() {
     
     # Получаем UUID всех разделов на диске
     local uuids=""
+    echo "Поиск разделов на диске $disk:"
+    
+    # Проверяем существование базового диска
+    if [ ! -b "$disk" ]; then
+        echo "  Диск $disk не найден"
+        return
+    fi
+    
+    # Ищем все разделы диска
     for i in 1 2 3 4 5 6 7 8 9; do
-        if [ -b "${disk}${i}" ]; then
-            local uuid=$(blkid -s UUID -o value "${disk}${i}" 2>/dev/null)
+        local partition="${disk}${i}"
+        if [ -b "$partition" ]; then
+            echo "  Найден раздел: $partition"
+            local uuid=$(blkid -s UUID -o value "$partition" 2>/dev/null)
             if [ -n "$uuid" ]; then
+                echo "    UUID: $uuid"
                 uuids="$uuids $uuid"
-                echo "  UUID раздела ${disk}${i}: $uuid"
+            else
+                echo "    UUID: не определен"
             fi
         fi
     done
     
-    # Удаляем все записи mount и swap, ссылающиеся на этот диск
-    local configs=$(uci show fstab 2>/dev/null | grep -E "fstab\.(@mount\[|@swap\[)" | cut -d'=' -f1 | sed "s/'$//" | sort -u)
+    echo "Список UUID для удаления: $uuids"
+    
+    # Получаем все конфигурации fstab
+    if ! uci show fstab >/dev/null 2>&1; then
+        echo "  Конфигурация fstab не найдена"
+        return
+    fi
+    
+    # Ищем все записи mount и swap
+    local configs=$(uci show fstab 2>/dev/null | grep -E "fstab\.(@mount\[|@swap\[|fstab\.[a-zA-Z])" | cut -d'=' -f1 | sed "s/'$//" | sort -u)
+    
+    echo "Найдено записей в fstab: $(echo "$configs" | wc -l)"
     
     for config in $configs; do
         # Получаем device или uuid записи
@@ -374,45 +397,90 @@ cleanup_old_fstab_entries() {
         local uuid=$(uci -q get "${config}.uuid" 2>/dev/null)
         local target=$(uci -q get "${config}.target" 2>/dev/null)
         
+        echo "  Проверяю запись $config:"
+        echo "    device=$device"
+        echo "    uuid=$uuid"
+        echo "    target=$target"
+        
         # Проверяем, относится ли запись к нашему диску
         local remove=0
         
-        # Проверка по device
+        # 1. Проверка по device (прямое совпадение с /dev/sda*)
         if [ -n "$device" ]; then
             if echo "$device" | grep -q "^${disk}[0-9]*$"; then
                 remove=1
+                echo "    -> Удалить: совпадение по device"
             fi
         fi
         
-        # Проверка по UUID
-        if [ -n "$uuid" ]; then
+        # 2. Проверка по UUID
+        if [ -n "$uuid" ] && [ "$remove" -eq 0 ]; then
             for disk_uuid in $uuids; do
                 if [ "$uuid" = "$disk_uuid" ]; then
                     remove=1
+                    echo "    -> Удалить: совпадение по UUID $disk_uuid"
                     break
                 fi
             done
         fi
         
-        # Проверка по target (монтирование в /mnt/sda*)
-        if [ -n "$target" ]; then
-            if echo "$target" | grep -q "^/mnt/sda[0-9]*$"; then
+        # 3. Проверка по target (монтирование в /mnt/sda*)
+        if [ -n "$target" ] && [ "$remove" -eq 0 ]; then
+            local disk_name=$(basename "$disk")  # "sda"
+            if echo "$target" | grep -q "^/mnt/${disk_name}[0-9]*$"; then
                 remove=1
+                echo "    -> Удалить: совпадение по target"
+            fi
+        fi
+        
+        # 4. Дополнительная проверка: если устройство существует, проверяем его реальный UUID
+        if [ -n "$device" ] && [ -b "$device" ] && [ "$remove" -eq 0 ]; then
+            local real_uuid=$(blkid -s UUID -o value "$device" 2>/dev/null)
+            if [ -n "$real_uuid" ]; then
+                for disk_uuid in $uuids; do
+                    if [ "$real_uuid" = "$disk_uuid" ]; then
+                        remove=1
+                        echo "    -> Удалить: реальный UUID устройства совпадает"
+                        break
+                    fi
+                done
             fi
         fi
         
         # Удаляем запись если нужно
         if [ "$remove" -eq 1 ]; then
             uci -q delete "$config"
-            if [ -n "$device" ]; then
-                echo "  Удалена запись: device=$device"
-            elif [ -n "$uuid" ]; then
-                echo "  Удалена запись: uuid=$uuid"
-            elif [ -n "$target" ]; then
-                echo "  Удалена запись: target=$target"
+            echo "    УДАЛЕНО: $config"
+        else
+            echo "    ОСТАВЛЕНО: не относится к диску $disk"
+        fi
+    done
+    
+    # Дополнительно: удаляем все записи с enabled="0" для нашего диска
+    echo "Проверка записей с enabled=0..."
+    for config in $configs; do
+        local enabled=$(uci -q get "${config}.enabled" 2>/dev/null)
+        local device=$(uci -q get "${config}.device" 2>/dev/null)
+        local target=$(uci -q get "${config}.target" 2>/dev/null)
+        
+        if [ "$enabled" = "0" ]; then
+            # Проверяем, относится ли к нашему диску
+            local should_delete=0
+            
+            if [ -n "$device" ] && echo "$device" | grep -q "^${disk}[0-9]*$"; then
+                should_delete=1
+            elif [ -n "$target" ] && echo "$target" | grep -q "^/mnt/$(basename $disk)[0-9]*$"; then
+                should_delete=1
+            fi
+            
+            if [ "$should_delete" -eq 1 ]; then
+                uci -q delete "$config"
+                echo "  Удалена отключенная запись: $config"
             fi
         fi
     done
+    
+    echo "Очистка завершена"
 }
 
 # Функция для настройки fstab
