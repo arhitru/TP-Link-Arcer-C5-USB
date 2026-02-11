@@ -710,10 +710,14 @@ main() {
     else
         echo "Изменения применены без переразметки."
         echo "Для полного применения изменений в extroot может потребоваться перезагрузка."
-        read -p "Перезагрузить сейчас? [y/N]: " REBOOT_NOW
-        if [ "$REBOOT_NOW" = "y" ] || [ "$REBOOT_NOW" = "Y" ]; then
-            echo "Перезагружаюсь..."
-            sleep 3
+        if [ -t 0 ]; then
+            read -p "Перезагрузить сейчас? [y/N]: " REBOOT_NOW
+            if [ "$REBOOT_NOW" = "y" ] || [ "$REBOOT_NOW" = "Y" ]; then
+                echo "Перезагружаюсь..."
+                sleep 3
+                reboot
+            fi
+        else
             reboot
         fi
     fi
