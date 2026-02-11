@@ -1,7 +1,7 @@
 #!/bin/sh
 # Основной скрипт установки/настройки OpenWRT
 
-LOG="/tmp/install.log"
+LOG="/root/install.log"
 echo "=== Начало установки: $(date) ===" > $LOG
 
 # Проверяем что система загрузилась
@@ -26,7 +26,6 @@ echo "1. Настройка системы..." | tee -a $LOG
 
 # Разметка и подключение USB
 cd /tmp && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/mount_usb.sh -O mount_usb.sh && chmod +x mount_usb.sh && ./mount_usb.sh
-mkdir -p /overlay/logs && mv /tmp/install.log /overlay/logs
 
 # --------------------------------------------------
 # ШАГ 2: Подготовка пост-перезагрузочного скрипта
@@ -141,4 +140,4 @@ sleep 5
 # Перезагрузка
 echo "=== Начинаю перезагрузку ===" | tee -a $LOG
 sync
-#reboot
+reboot
