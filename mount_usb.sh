@@ -347,6 +347,74 @@ create_new_partitions() {
     echo "$PART_COUNT"
 }
 
+# Функция для удаления старых записей fstab (по UUID или пути)
+cleanup_old_fstab_entries() {
+    local disk="$1"
+    
+    echo "Очищаю старые записи fstab..."
+    
+    # Получаем UUID всех разделов на диске
+    local uuids=""
+    for i in 1 2 3 4 5 6 7 8 9; do
+        if [ -b "${disk}${i}" ]; then
+            local uuid=$(blkid -s UUID -o value "${disk}${i}" 2>/dev/null)
+            if [ -n "$uuid" ]; then
+                uuids="$uuids $uuid"
+                echo "  UUID раздела ${disk}${i}: $uuid"
+            fi
+        fi
+    done
+    
+    # Удаляем все записи mount и swap, ссылающиеся на этот диск
+    local configs=$(uci show fstab 2>/dev/null | grep -E "fstab\.(@mount\[|@swap\[)" | cut -d'=' -f1 | sed "s/'$//" | sort -u)
+    
+    for config in $configs; do
+        # Получаем device или uuid записи
+        local device=$(uci -q get "${config}.device" 2>/dev/null)
+        local uuid=$(uci -q get "${config}.uuid" 2>/dev/null)
+        local target=$(uci -q get "${config}.target" 2>/dev/null)
+        
+        # Проверяем, относится ли запись к нашему диску
+        local remove=0
+        
+        # Проверка по device
+        if [ -n "$device" ]; then
+            if echo "$device" | grep -q "^${disk}[0-9]*$"; then
+                remove=1
+            fi
+        fi
+        
+        # Проверка по UUID
+        if [ -n "$uuid" ]; then
+            for disk_uuid in $uuids; do
+                if [ "$uuid" = "$disk_uuid" ]; then
+                    remove=1
+                    break
+                fi
+            done
+        fi
+        
+        # Проверка по target (монтирование в /mnt/sda*)
+        if [ -n "$target" ]; then
+            if echo "$target" | grep -q "^/mnt/sda[0-9]*$"; then
+                remove=1
+            fi
+        fi
+        
+        # Удаляем запись если нужно
+        if [ "$remove" -eq 1 ]; then
+            uci -q delete "$config"
+            if [ -n "$device" ]; then
+                echo "  Удалена запись: device=$device"
+            elif [ -n "$uuid" ]; then
+                echo "  Удалена запись: uuid=$uuid"
+            elif [ -n "$target" ]; then
+                echo "  Удалена запись: target=$target"
+            fi
+        fi
+    done
+}
+
 # Функция для настройки fstab
 configure_fstab() {
     local disk="$1"
@@ -354,6 +422,9 @@ configure_fstab() {
     
     echo "Настраиваю fstab..."
     
+    # Очищаем старые записи перед созданием новых
+    cleanup_old_fstab_entries "$disk"
+
     # Configure the extroot mount entry
     eval $(block info | grep -o -e 'MOUNT="\S*/overlay"')
     
