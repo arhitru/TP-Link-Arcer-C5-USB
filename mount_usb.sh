@@ -292,7 +292,7 @@ create_new_partitions() {
         
         parted -s ${disk} mklabel gpt || error_exit "Ошибка создания GPT таблицы"
         
-        EXTROOT_END=$((DISK_SIZE_GB * 80 / 100))
+        EXTROOT_END=1 # $((DISK_SIZE_GB * 80 / 100))
         parted -s ${disk} mkpart "extroot" ext4 2048s ${EXTROOT_END}GB || error_exit "Ошибка создания extroot"
         sleep 2
         mkfs.ext4 -L "extroot" ${disk}1 || error_exit "Ошибка создания файловой системы"
@@ -308,16 +308,16 @@ create_new_partitions() {
         
         parted -s ${disk} mklabel gpt || error_exit "Ошибка создания GPT таблицы"
         
-        parted -s ${disk} mkpart "extroot" ext4 2048s 2GB || error_exit "Ошибка создания extroot"
+        parted -s ${disk} mkpart "extroot" ext4 2048s 1GB || error_exit "Ошибка создания extroot"
         sleep 2
         mkfs.ext4 -L "extroot" ${disk}1 || error_exit "Ошибка создания файловой системы"
         
-        parted -s ${disk} mkpart "swap" linux-swap 2GB 4GB || error_exit "Ошибка создания swap"
+        parted -s ${disk} mkpart "swap" linux-swap 1GB 2GB || error_exit "Ошибка создания swap"
         sleep 2
         mkswap -L "swap" ${disk}2 || error_exit "Ошибка создания swap"
         swapon ${disk}2 2>/dev/null || echo "Предупреждение: не удалось активировать swap"
         
-        parted -s ${disk} mkpart "data" ext4 4GB 100% || error_exit "Ошибка создания data"
+        parted -s ${disk} mkpart "data" ext4 2GB 100% || error_exit "Ошибка создания data"
         sleep 2
         mkfs.ext4 -L "data" ${disk}3 || error_exit "Ошибка создания файловой системы"
         
@@ -327,17 +327,17 @@ create_new_partitions() {
         
         parted -s ${disk} mklabel gpt || error_exit "Ошибка создания GPT таблицы"
         
-        parted -s ${disk} mkpart "extroot" ext4 2048s 4GB || error_exit "Ошибка создания extroot"
+        parted -s ${disk} mkpart "extroot" ext4 2048s 1GB || error_exit "Ошибка создания extroot"
         sleep 2
         mkfs.ext4 -L "extroot" ${disk}1 || error_exit "Ошибка создания файловой системы"
         
-        parted -s ${disk} mkpart "swap" linux-swap 4GB 8GB || error_exit "Ошибка создания swap"
+        parted -s ${disk} mkpart "swap" linux-swap 1GB 2GB || error_exit "Ошибка создания swap"
         sleep 2
         mkswap -L "swap" ${disk}2 || error_exit "Ошибка создания swap"
         swapon ${disk}2 2>/dev/null || echo "Предупреждение: не удалось активировать swap"
         
-        DATA_SIZE=$((DISK_SIZE_GB - 8))
-        DATA_PART1_END=$((8 + DATA_SIZE / 2))
+        DATA_SIZE=$((DISK_SIZE_GB - 2))
+        DATA_PART1_END=2 #$((8 + DATA_SIZE / 2))
         parted -s ${disk} mkpart "data" ext4 8GB ${DATA_PART1_END}GB || error_exit "Ошибка создания data"
         sleep 2
         mkfs.ext4 -L "data" ${disk}3 || error_exit "Ошибка создания файловой системы"
