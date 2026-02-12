@@ -125,7 +125,7 @@ if ! grep -q "postboot.sh" /etc/rc.local; then
         # Добавляем в конец
         echo '' >> /etc/rc.local
         echo '# Auto-generated post-boot script (will self-remove)' >> /etc/rc.local
-        echo '/root/postboot.sh &' >> /etc/rc.local
+        echo '/root/postboot.sh' >> /etc/rc.local
     fi
     
     echo "Добавлено в автозагрузку" | tee -a $LOG
