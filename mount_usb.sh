@@ -867,7 +867,8 @@ main() {
     
     echo "" | tee -a $LOG
     echo "Настройка fstab завершена успешно!" | tee -a $LOG
-    
+    cat /etc/config/fstab | tee -a $LOG
+
     # Автоматическая перезагрузка всегда при изменении разметки
     if [ "$EXISTING_PARTS" -eq 0 ] || [ "$CHECK_RESULT" = "false" ]; then
         if [ -t 0 ]; then
