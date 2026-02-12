@@ -872,9 +872,13 @@ main() {
     # Автоматическая перезагрузка всегда при изменении разметки
     if [ "$EXISTING_PARTS" -eq 0 ] || [ "$CHECK_RESULT" = "false" ]; then
         if [ -t 0 ]; then
-            echo "Перезагружаюсь для применения изменений..." | tee -a $LOG
-            sleep 3
-            reboot
+            echo "Для полного применения изменений требуется перезагрузка." | tee -a $LOG
+            read -p "Перезагрузить сейчас? [y/N]: " REBOOT_NOW
+            if [ "$REBOOT_NOW" = "y" ] || [ "$REBOOT_NOW" = "Y" ]; then
+                echo "Перезагружаюсь..." | tee -a $LOG
+                sleep 3
+                reboot
+            fi
         fi
     else
         echo "Изменения применены без переразметки." | tee -a $LOG
