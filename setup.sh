@@ -28,6 +28,7 @@ echo "1. Настройка системы..." | tee -a $LOG
 cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/mount_usb.sh >> $LOG 2>&1 && chmod +x mount_usb.sh
 
 # Установка недостающих пакетов
+cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/postboot.sh >> $LOG 2>&1 && chmod +x postboot.sh
 cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup_required.sh >> $LOG 2>&1 && chmod +x setup_required.sh
 
 /root/mount_usb.sh
@@ -38,6 +39,7 @@ cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/
 echo "2. Подготовка пост-перезагрузки..." | tee -a $LOG
 
 # Создаем скрипт
+if [ ! -f "/root/postboot.sh" ]; then
 cat << 'EOF' > /root/postboot.sh
 #!/bin/sh
 # Этот скрипт выполнится один раз после перезагрузки
@@ -98,6 +100,7 @@ echo "COMPLETED_AT_$(date +%s)" > /root/.postboot_done
 echo "=== Post-boot завершен: $(date) ===" >> $LOG
 exit 0
 EOF
+fi
 
 chmod +x /root/postboot.sh
 
