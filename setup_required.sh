@@ -18,6 +18,7 @@ LOG_FILE="${LOG_DIR}/setup_required_$(date +%Y%m%d_%H%M%S).log"
 PID_FILE="/var/run/${SCRIPT_NAME}.pid"
 LOCK_FILE="/var/lock/${SCRIPT_NAME}.lock"
 CONFIG_FILE="${SCRIPT_DIR}/setup_required.conf"
+RETRY_COUNT=5
 
 # Режим выполнения (auto/interactive)
 if [ "$1" = "--auto" ] || [ "$1" = "-a" ]; then
@@ -287,7 +288,7 @@ configure_opkg() {
 
 update_opkg() {
     log_info "Обновление списков пакетов..."
-    RETRY_COUNT=5
+
     local retry=0
     while [ $retry -lt $RETRY_COUNT ]; do
         if opkg update > /tmp/opkg_update.log 2>&1; then
@@ -321,8 +322,8 @@ install_package() {
     
     while [ $retry -lt $RETRY_COUNT ]; do
         if opkg install "$pkg" > /tmp/opkg_install.log 2>&1; then
-            log_success "Пакет $pkg успешно установлен"
             cat /tmp/opkg_install.log >> "$LOG_FILE"
+            log_success "Пакет $pkg успешно установлен"
             rm -f /tmp/opkg_install.log
             return 0
         else
@@ -363,14 +364,13 @@ replace_package() {
     fi
     
     # Создаем временную директорию для кэша
-    local tmp_dir="/tmp/opkg_cache_$$"
-    mkdir -p "$tmp_dir"
+    local tmp_dir="/tmp"
     
     # Скачиваем новый пакет
-    if ! opkg download "$new_pkg" --cache "$tmp_dir" > /tmp/opkg_download.log 2>&1; then
+    if ! opkg download "$new_pkg" --cache /tmp > /tmp/opkg_download.log 2>&1; then
         log_error "Не удалось скачать пакет $new_pkg"
         cat /tmp/opkg_download.log >> "$LOG_FILE"
-        rm -rf "$tmp_dir" /tmp/opkg_download.log
+        rm -rf /tmp/opkg_download.log
         return 1
     fi
     
@@ -385,15 +385,15 @@ replace_package() {
     fi
     
     # Устанавливаем новый пакет
-    if opkg install "$new_pkg" --cache "$tmp_dir" > /tmp/opkg_install.log 2>&1; then
-        log_success "Пакет $new_pkg успешно установлен"
+    if opkg install "$new_pkg" --cache /tmp > /tmp/opkg_install.log 2>&1; then
         cat /tmp/opkg_install.log >> "$LOG_FILE"
-        rm -rf "$tmp_dir" /tmp/opkg_install.log /tmp/opkg_download.log
+        log_success "Пакет $new_pkg успешно установлен"
+        rm -rf /tmp/opkg_install.log /tmp/opkg_download.log
         return 0
     else
         log_error "Не удалось установить пакет $new_pkg"
         cat /tmp/opkg_install.log >> "$LOG_FILE"
-        rm -rf "$tmp_dir" /tmp/opkg_install.log /tmp/opkg_download.log
+        rm -rf /tmp/opkg_install.log /tmp/opkg_download.log
         return 1
     fi
 }
@@ -544,9 +544,9 @@ main() {
         exit 1
     fi
     
-    # Установка обязательных пакетов
-    log_info "=== УСТАНОВКА ОБЯЗАТЕЛЬНЫХ ПАКЕТОВ ==="
-    
+    # Установка  пакетов
+    log_info "=== УСТАНОВКА ПАКЕТОВ ==="
+     echo "пакеты - $REQUIRED_PACKAGES "
     for pkg in $REQUIRED_PACKAGES; do
         install_package "$pkg"
     done
@@ -569,6 +569,7 @@ main() {
     
     log_success "=== УСТАНОВКА УСПЕШНО ЗАВЕРШЕНА ==="
     log_info "Полный лог доступен в: $LOG_FILE"
+    echo "[INFO] $(date '+%Y-%m-%d %H:%M:%S') - setup_required.sh завершил работу" >> /root/postboot.log
     
     if [ $AUTO_MODE -eq 0 ]; then
         echo -n "Перезагрузить систему сейчас? (y/N): " >&3
