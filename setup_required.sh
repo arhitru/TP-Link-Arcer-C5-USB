@@ -287,7 +287,7 @@ configure_opkg() {
 
 update_opkg() {
     log_info "Обновление списков пакетов..."
-    
+    RETRY_COUNT=5
     local retry=0
     while [ $retry -lt $RETRY_COUNT ]; do
         if opkg update > /tmp/opkg_update.log 2>&1; then
