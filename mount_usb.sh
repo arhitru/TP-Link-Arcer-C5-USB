@@ -1050,7 +1050,7 @@ main() {
     else
         echo "Автоматическая перезагрузка через 5 секунд..." | tee -a $LOG
         sleep 5
-        reboot
+#        reboot
     fi
 }
 
