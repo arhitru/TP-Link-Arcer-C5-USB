@@ -1,7 +1,7 @@
 #!/bin/sh
 # Основной скрипт установки/настройки OpenWRT
 
-LOG="/root/install.log"
+LOG="/root/setup.log"
 echo "=== Начало установки: $(date) ===" > $LOG
 
 # Проверяем что система загрузилась
