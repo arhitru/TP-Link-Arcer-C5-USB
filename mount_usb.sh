@@ -532,7 +532,8 @@ cleanup_old_fstab_entries() {
         local partition="${disk}${i}"
         if [ -b "$partition" ]; then
             echo "  Найден раздел: $partition" | tee -a $LOG
-            local uuid=$(blkid -s UUID -o value "$partition" 2>/dev/null)
+            local uuid="$(block info ${DISK}${i} | grep -o -e 'UUID="\S*"')"
+                        #$(blkid -s UUID -o value "$partition" 2>/dev/null)
             if [ -n "$uuid" ]; then
                 echo "    UUID: $uuid" | tee -a $LOG
                 uuids="$uuids $uuid"
@@ -643,7 +644,13 @@ cleanup_old_fstab_entries() {
             fi
         fi
     done
-    
+        
+    # Удаляем старые настройки для этого диска
+    uci -q delete fstab.extroot
+    uci -q delete fstab.swap
+    uci -q delete fstab.data
+    uci -q delete fstab.extra
+
     echo "Очистка завершена" | tee -a $LOG
 }
 
@@ -660,12 +667,6 @@ configure_fstab() {
     # Configure the extroot mount entry
     eval $(block info | grep -o -e 'MOUNT="\S*/overlay"')
     
-    # Удаляем старые настройки для этого диска
-    uci -q delete fstab.extroot
-    uci -q delete fstab.swap
-    uci -q delete fstab.data
-    uci -q delete fstab.extra
-    
     # Настраиваем extroot (всегда должен быть)
     if [ -b "${disk}1" ]; then
         uci set fstab.extroot="mount"
@@ -676,7 +677,7 @@ configure_fstab() {
     fi
     
     # Настраиваем swap если есть
-    if [ "$part_count" -ge 2 ] && [ -b "${disk}2" ]; then
+    if [ -b "${disk}2" ]; then
         uci set fstab.swap="swap"
         uci set fstab.swap.device="${disk}2"
         uci set fstab.swap.enabled="1"
@@ -684,7 +685,7 @@ configure_fstab() {
     fi
     
     # Настраиваем data если есть
-    if [ "$part_count" -ge 3 ] && [ -b "${disk}3" ]; then
+    if [ -b "${disk}3" ]; then
         uci set fstab.data="mount"
         uci set fstab.data.device="${disk}3"
         uci set fstab.data.target="/mnt/data"
@@ -695,7 +696,7 @@ configure_fstab() {
     fi
     
     # Настраиваем extra если есть
-    if [ "$part_count" -ge 4 ] && [ -b "${disk}4" ]; then
+    if [ -b "${disk}4" ]; then
         uci set fstab.extra="mount"
         uci set fstab.extra.device="${disk}4"
         uci set fstab.extra.target="/mnt/extra"
