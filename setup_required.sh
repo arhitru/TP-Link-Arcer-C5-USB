@@ -104,11 +104,7 @@ check_single_instance() {
 }
 
 load_config() {
-    if [ -f "$CONFIG_FILE" ]; then
-        log_info "Загружаем конфигурацию из $CONFIG_FILE"
-        # shellcheck source=/dev/null
-        . "$CONFIG_FILE"
-    else
+    if [! -f "$CONFIG_FILE" ]; then
         log_warn "Файл конфигурации не найден, используем значения по умолчанию"
         # Создаем конфиг по умолчанию
         cat > "$CONFIG_FILE" << 'EOF'
@@ -147,6 +143,9 @@ DEBUG=0
 EOF
         log_info "Создан файл конфигурации по умолчанию: $CONFIG_FILE"
     fi
+    log_info "Загружаем конфигурацию из $CONFIG_FILE"
+    # shellcheck source=/dev/null
+    . "$CONFIG_FILE"
 }
 
 # ============================================================================
