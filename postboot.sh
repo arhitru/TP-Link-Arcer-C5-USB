@@ -29,6 +29,7 @@ if [ ! -f "/root/setup_required.sh" ]; then
     cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup_required.sh >> $LOG 2>&1 && chmod +x setup_required.sh
 fi
 
+echo "Запускаю setup_required.sh" >> $LOG
 /root/setup_required.sh
 
 # --------------------------------------------------
