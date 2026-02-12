@@ -30,6 +30,7 @@ cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/
 # Установка недостающих пакетов
 cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/postboot.sh >> $LOG 2>&1 && chmod +x postboot.sh
 cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup_required.sh >> $LOG 2>&1 && chmod +x setup_required.sh
+cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup_required.conf >> $LOG 2>&1
 
 /root/mount_usb.sh
 
