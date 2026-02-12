@@ -126,7 +126,21 @@ get_disk_size() {
     fi
 }
 
-# Функция для получения информации о разделах в структурированном виде
+# Функция для подсчета существующих разделов
+count_existing_partitions() {
+    local disk="$1"
+    local count=0
+    
+    for i in 1 2 3 4 5 6 7 8 9; do
+        if [ -b "${disk}${i}" ]; then
+            count=$((count + 1))
+        fi
+    done
+    
+    echo "$count"
+}
+
+# Функция для получения информации о разделах
 get_partition_info() {
     local disk="$1"
     
@@ -135,10 +149,8 @@ get_partition_info() {
         return
     fi
     
-    # Создаем временный файл для хранения информации
     local info_file=$(mktemp /tmp/partinfo.XXXXXX)
     
-    # Получаем информацию из parted
     parted -s "$disk" unit s print 2>/dev/null | awk 'NR > 7 && /^ [0-9]/ {
         gsub(/s$/, "", $2);
         gsub(/s$/, "", $3);
@@ -147,59 +159,6 @@ get_partition_info() {
     }' > "$info_file"
     
     echo "$info_file"
-}
-
-# Функция для поиска свободного места в начале диска
-find_free_space_before_first_partition() {
-    local disk="$1"
-    local part_info_file="$2"
-    
-    local first_part_start=""
-    
-    if [ -s "$part_info_file" ]; then
-        # Берем начало первого раздела
-        first_part_start=$(head -n1 "$part_info_file" | cut -d'|' -f2)
-    fi
-    
-    if [ -z "$first_part_start" ]; then
-        # Если разделов нет, все место свободно
-        echo "0"
-    else
-        echo "$first_part_start"
-    fi
-}
-
-# Функция для поиска свободного места между разделами
-find_free_space_between_partitions() {
-    local disk="$1"
-    local part_info_file="$2"
-    local target_size_sectors="$3"  # размер в секторах
-    
-    local prev_end=0
-    local free_start=""
-    local free_size=0
-    
-    while IFS='|' read -r num start end size fs name; do
-        # Убираем суффикс 's' если есть
-        start=$(echo "$start" | sed 's/s$//')
-        end=$(echo "$end" | sed 's/s$//')
-        
-        # Проверяем свободное место перед этим разделом
-        if [ $prev_end -gt 0 ] && [ $start -gt $((prev_end + 1)) ]; then
-            free_start=$((prev_end + 1))
-            free_size=$((start - free_start))
-            
-            if [ $free_size -ge $target_size_sectors ]; then
-                echo "$free_start"
-                return
-            fi
-        fi
-        
-        prev_end=$end
-    done < "$part_info_file"
-    
-    # Если ничего не нашли
-    echo ""
 }
 
 # Функция для поиска свободного места в конце диска
@@ -214,7 +173,6 @@ find_free_space_at_end() {
         last_end=$(tail -n1 "$part_info_file" | cut -d'|' -f3 | sed 's/s$//')
     fi
     
-    # Получаем общий размер диска в секторах
     local disk_size_sectors=0
     if [ -f "/sys/block/${disk##*/}/size" ]; then
         disk_size_sectors=$(cat "/sys/block/${disk##*/}/size" 2>/dev/null)
@@ -227,12 +185,11 @@ find_free_space_at_end() {
     fi
 }
 
-# Функция для определения оптимальной конфигурации разделов
+# Функция для определения оптимальной конфигурации
 determine_optimal_layout() {
     local disk="$1"
     local disk_size_gb="$2"
     
-    # Определяем базовую конфигурацию в зависимости от размера
     if [ "$disk_size_gb" -lt 2 ]; then
         echo "1:extroot:100%"
     elif [ "$disk_size_gb" -lt 4 ]; then
@@ -244,6 +201,52 @@ determine_optimal_layout() {
     fi
 }
 
+# Функция для безопасного создания файловой системы с проверкой
+safe_mkfs() {
+    local partition="$1"
+    local fstype="$2"
+    local label="$3"
+    
+    echo "    Создание FS на $partition: $fstype, метка $label" | tee -a $LOG
+    
+    # Ждем появления устройства
+    local max_wait=10
+    local wait_count=0
+    while [ ! -b "$partition" ] && [ $wait_count -lt $max_wait ]; do
+        sleep 1
+        wait_count=$((wait_count + 1))
+    done
+    
+    if [ ! -b "$partition" ]; then
+        echo "    ❌ Устройство $partition не появилось" | tee -a $LOG
+        return 1
+    fi
+    
+    case "$fstype" in
+        "ext4")
+            mkfs.ext4 -F -L "$label" "$partition" >/dev/null 2>&1
+            ;;
+        "swap")
+            mkswap -L "$label" "$partition" >/dev/null 2>&1
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+    
+    if [ $? -eq 0 ]; then
+        echo "    ✅ FS создана успешно" | tee -a $LOG
+        # Проверяем, что метка установилась
+        sleep 1
+        local actual_label=$(blkid -s LABEL -o value "$partition" 2>/dev/null)
+        echo "    Метка раздела: $actual_label" | tee -a $LOG
+        return 0
+    else
+        echo "    ❌ Ошибка создания FS" | tee -a $LOG
+        return 1
+    fi
+}
+
 # Функция для создания недостающих разделов
 create_missing_partitions() {
     local disk="$1"
@@ -252,7 +255,6 @@ create_missing_partitions() {
     
     echo "Анализ существующих разделов и создание недостающих..." | tee -a $LOG
     
-    # Получаем информацию о существующих разделах
     local part_info_file=$(get_partition_info "$disk")
     
     # Определяем, какие разделы уже есть
@@ -260,10 +262,6 @@ create_missing_partitions() {
     local has_swap=0
     local has_data=0
     local has_extra=0
-    local extroot_part_num=""
-    local swap_part_num=""
-    local data_part_num=""
-    local extra_part_num=""
     
     if [ -s "$part_info_file" ]; then
         while IFS='|' read -r num start end size fs name; do
@@ -271,29 +269,37 @@ create_missing_partitions() {
             case "$name" in
                 "extroot")
                     has_extroot=1
-                    extroot_part_num=$num
                     echo "  ✅ Найден extroot: раздел $num" | tee -a $LOG
                     ;;
                 "swap")
                     has_swap=1
-                    swap_part_num=$num
                     echo "  ✅ Найден swap: раздел $num" | tee -a $LOG
                     ;;
                 "data")
                     has_data=1
-                    data_part_num=$num
                     echo "  ✅ Найден data: раздел $num" | tee -a $LOG
                     ;;
                 "extra")
                     has_extra=1
-                    extra_part_num=$num
                     echo "  ✅ Найден extra: раздел $num" | tee -a $LOG
                     ;;
             esac
         done < "$part_info_file"
     fi
     
-    # Определяем оптимальную конфигурацию
+    # Также проверяем по меткам через blkid (более надежно)
+    for i in 1 2 3 4 5 6 7 8 9; do
+        if [ -b "${disk}${i}" ]; then
+            local label=$(blkid -s LABEL -o value "${disk}${i}" 2>/dev/null)
+            case "$label" in
+                "extroot") has_extroot=1 ;;
+                "swap") has_swap=1 ;;
+                "data") has_data=1 ;;
+                "extra") has_extra=1 ;;
+            esac
+        fi
+    done
+    
     local optimal_layout=$(determine_optimal_layout "$disk" "$disk_size_gb")
     local optimal_count=$(echo "$optimal_layout" | cut -d':' -f1)
     
@@ -301,117 +307,69 @@ create_missing_partitions() {
     
     # Проверяем наличие extroot - это критично
     if [ "$has_extroot" -eq 0 ]; then
-        echo "  ❌ Extroot раздел не найден! Это критично." | tee -a $LOG
-        echo "  Поиск свободного места для создания extroot..." | tee -a $LOG
-        
-        # Ищем свободное место в начале диска
-        local free_start_sectors=$(find_free_space_before_first_partition "$disk" "$part_info_file")
-        
-        if [ -n "$free_start_sectors" ] && [ "$free_start_sectors" != "0" ]; then
-            echo "  Найдено свободное место в начале диска (сектор $free_start_sectors)" | tee -a $LOG
-            
-            # Проверяем, достаточно ли места (минимум 1GB = 2048 секторов * 512 байт = ~1MB? Нужно пересчитать)
-            # 1GB = 1953125 секторов (512 байт)
-            local min_extroot_sectors=1953125
-            
-            if [ "$free_start_sectors" -ge 2048 ] && [ "$free_start_sectors" -gt $min_extroot_sectors ]; then
-                echo "  Создаю extroot раздел в начале диска..." | tee -a $LOG
-                
-                # Определяем следующий свободный номер раздела
-                local next_part_num=$((existing_parts + 1))
-                
-                # Сдвигаем существующие разделы? Нет, просто создаем перед ними
-                # Это сложная операция, проще пересоздать всю разметку
-                echo "  ⚠️  Невозможно создать раздел перед существующими без их удаления." | tee -a $LOG
-                echo "  Требуется полная переразметка диска." | tee -a $LOG
-                return 1
-            else
-                echo "  Недостаточно места в начале диска или место занято" | tee -a $LOG
-            fi
-        fi
-        
-        # Если не нашли в начале, ищем другое свободное место
-        echo "  Поиск свободного места для extroot в другом месте..." | tee -a $LOG
-        
-        # Для extroot лучше всего место в начале, но если нет - используем любое
-        local free_start=$(find_free_space_between_partitions "$disk" "$part_info_file" 1953125)
-        
-        if [ -n "$free_start" ]; then
-            echo "  Найдено свободное место между разделами (сектор $free_start)" | tee -a $LOG
-            echo "  Но extroot должен быть первым разделом для загрузки." | tee -a $LOG
-            echo "  Требуется полная переразметка." | tee -a $LOG
-            return 1
-        else
-            echo "  Свободное место не найдено." | tee -a $LOG
-            echo "  Требуется полная переразметка." | tee -a $LOG
-            return 1
-        fi
+        echo "  ❌ Extroot раздел не найден! Требуется полная переразметка." | tee -a $LOG
+        rm -f "$part_info_file"
+        return 1
     fi
     
-    # Если extroot есть, проверяем остальные разделы
-    local parts_to_create=0
-    local layout_parts=""
+    # Определяем, какие разделы нужно создать
+    local parts_to_create=""
     
     case "$optimal_count" in
         2)
             if [ "$has_swap" -eq 0 ]; then
-                parts_to_create=$((parts_to_create + 1))
-                layout_parts="$layout_parts swap"
+                parts_to_create="$parts_to_create swap"
                 echo "  ❌ Отсутствует swap раздел" | tee -a $LOG
             fi
             ;;
         3)
             if [ "$has_swap" -eq 0 ]; then
-                parts_to_create=$((parts_to_create + 1))
-                layout_parts="$layout_parts swap"
+                parts_to_create="$parts_to_create swap"
                 echo "  ❌ Отсутствует swap раздел" | tee -a $LOG
             fi
             if [ "$has_data" -eq 0 ] && [ "$has_extra" -eq 0 ]; then
-                parts_to_create=$((parts_to_create + 1))
-                layout_parts="$layout_parts data"
-                echo "  ❌ Отсутствует data/extra раздел" | tee -a $LOG
+                parts_to_create="$parts_to_create data"
+                echo "  ❌ Отсутствует data раздел" | tee -a $LOG
             fi
             ;;
         4)
             if [ "$has_swap" -eq 0 ]; then
-                parts_to_create=$((parts_to_create + 1))
-                layout_parts="$layout_parts swap"
+                parts_to_create="$parts_to_create swap"
                 echo "  ❌ Отсутствует swap раздел" | tee -a $LOG
             fi
             if [ "$has_data" -eq 0 ]; then
-                parts_to_create=$((parts_to_create + 1))
-                layout_parts="$layout_parts data"
+                parts_to_create="$parts_to_create data"
                 echo "  ❌ Отсутствует data раздел" | tee -a $LOG
             fi
             if [ "$has_extra" -eq 0 ]; then
-                parts_to_create=$((parts_to_create + 1))
-                layout_parts="$layout_parts extra"
+                parts_to_create="$parts_to_create extra"
                 echo "  ❌ Отсутствует extra раздел" | tee -a $LOG
             fi
             ;;
     esac
     
-    if [ $parts_to_create -eq 0 ]; then
+    if [ -z "$parts_to_create" ]; then
         echo "  ✅ Все необходимые разделы уже существуют" | tee -a $LOG
         echo "$optimal_count"
         rm -f "$part_info_file"
         return 0
     fi
     
-    echo "  Нужно создать $parts_to_create недостающих разделов:$layout_parts" | tee -a $LOG
-    echo "  Поиск свободного места для создания разделов..." | tee -a $LOG
+    echo "  Нужно создать недостающие разделы:$parts_to_create" | tee -a $LOG
+    echo "  Поиск свободного места в конце диска..." | tee -a $LOG
     
-    # Ищем место в конце диска для новых разделов
-    local total_needed_sectors=0
-    
-    # Оцениваем необходимый размер
-    for part in $layout_parts; do
+    # Рассчитываем необходимый размер
+    local total_needed_mb=0
+    for part in $parts_to_create; do
         case "$part" in
-            "swap") total_needed_sectors=$((total_needed_sectors + 1953125)) ;; # 1GB
-            "data") total_needed_sectors=$((total_needed_sectors + 11718750)) ;; # 6GB
-            "extra") total_needed_sectors=$((total_needed_sectors + 1953125)) ;; # 1GB минимум
+            "swap") total_needed_mb=$((total_needed_mb + 1024)) ;; # 1GB
+            "data") total_needed_mb=$((total_needed_mb + 6144)) ;; # 6GB
+            "extra") total_needed_mb=$((total_needed_mb + 1024)) ;; # 1GB минимум
         esac
     done
+    
+    # Конвертируем в сектора (512 байт)
+    local total_needed_sectors=$((total_needed_mb * 1024 * 1024 / 512))
     
     local free_end_start=$(find_free_space_at_end "$disk" "$part_info_file" $total_needed_sectors)
     
@@ -422,41 +380,53 @@ create_missing_partitions() {
         local current_start=$free_end_start
         local next_part_num=$((existing_parts + 1))
         
-        # Создаем разделы в правильном порядке
-        for part in $layout_parts; do
+        # Создаем разделы
+        for part in $parts_to_create; do
             case "$part" in
                 "swap")
                     echo "    Создание swap раздела (номер $next_part_num)..." | tee -a $LOG
-                    parted -s "$disk" mkpart "swap" linux-swap ${current_start}s $((current_start + 1953125))s || {
+                    
+                    # Размер 1GB = 1953125 секторов (512 байт)
+                    local swap_end=$((current_start + 1953125))
+                    
+                    parted -s "$disk" mkpart "swap" linux-swap ${current_start}s ${swap_end}s || {
                         echo "    ❌ Ошибка создания swap" | tee -a $LOG
                         rm -f "$part_info_file"
                         return 1
                     }
                     sleep 2
                     force_reload_partitions "$disk"
-                    mkswap -L "swap" "${disk}${next_part_num}" || echo "    ⚠️  Ошибка создания swap FS" | tee -a $LOG
-                    current_start=$((current_start + 1953125 + 1))
+                    safe_mkfs "${disk}${next_part_num}" "swap" "swap" || {
+                        echo "    ❌ Ошибка создания swap FS" | tee -a $LOG
+                    }
+                    current_start=$((swap_end + 1))
                     next_part_num=$((next_part_num + 1))
                     has_swap=1
                     ;;
                 "data")
                     echo "    Создание data раздела (номер $next_part_num)..." | tee -a $LOG
-                    parted -s "$disk" mkpart "data" ext4 ${current_start}s $((current_start + 11718750))s || {
+                    
+                    # Размер 6GB = 11718750 секторов
+                    local data_end=$((current_start + 11718750))
+                    
+                    parted -s "$disk" mkpart "data" ext4 ${current_start}s ${data_end}s || {
                         echo "    ❌ Ошибка создания data" | tee -a $LOG
                         rm -f "$part_info_file"
                         return 1
                     }
                     sleep 2
                     force_reload_partitions "$disk"
-                    mkfs.ext4 -L "data" "${disk}${next_part_num}" 2>/dev/null || echo "    ⚠️  Ошибка создания data FS" | tee -a $LOG
-                    current_start=$((current_start + 11718750 + 1))
+                    safe_mkfs "${disk}${next_part_num}" "ext4" "data" || {
+                        echo "    ❌ Ошибка создания data FS" | tee -a $LOG
+                    }
+                    current_start=$((data_end + 1))
                     next_part_num=$((next_part_num + 1))
                     has_data=1
                     ;;
                 "extra")
                     echo "    Создание extra раздела (номер $next_part_num)..." | tee -a $LOG
+                    
                     # Используем оставшееся место до конца диска
-                    local disk_size_sectors=$(cat "/sys/block/${disk##*/}/size" 2>/dev/null)
                     parted -s "$disk" mkpart "extra" ext4 ${current_start}s 100% || {
                         echo "    ❌ Ошибка создания extra" | tee -a $LOG
                         rm -f "$part_info_file"
@@ -464,23 +434,364 @@ create_missing_partitions() {
                     }
                     sleep 2
                     force_reload_partitions "$disk"
-                    mkfs.ext4 -L "extra" "${disk}${next_part_num}" 2>/dev/null || echo "    ⚠️  Ошибка создания extra FS" | tee -a $LOG
+                    safe_mkfs "${disk}${next_part_num}" "ext4" "extra" || {
+                        echo "    ❌ Ошибка создания extra FS" | tee -a $LOG
+                    }
                     has_extra=1
                     ;;
             esac
+            sleep 1
         done
         
         echo "  ✅ Недостающие разделы созданы" | tee -a $LOG
         
-        # Определяем новое количество разделов
         local new_part_count=$(count_existing_partitions "$disk")
         echo "$new_part_count"
         rm -f "$part_info_file"
         return 0
     else
         echo "  ❌ Недостаточно свободного места в конце диска" | tee -a $LOG
-        echo "  Требуется полная переразметка." | tee -a $LOG
         rm -f "$part_info_file"
+        return 1
+    fi
+}
+
+# Функция для создания новой разметки
+create_new_partitions() {
+    local disk="$1"
+    
+    echo "Создаю новую разметку на диске $disk..." | tee -a $LOG
+    
+    DISK_SIZE_BYTES=$(get_disk_size "$disk") || error_exit "Не удалось определить размер диска"
+    
+    if [ -z "$DISK_SIZE_BYTES" ] || [ "$DISK_SIZE_BYTES" -eq 0 ]; then
+        error_exit "Не удалось определить размер диска"
+    fi
+    
+    DISK_SIZE_GB=$((DISK_SIZE_BYTES / 1024 / 1024 / 1024))
+    
+    echo "Размер диска: ${DISK_SIZE_GB}GB" | tee -a $LOG
+    
+    force_reload_partitions "$disk"
+    
+    # Очищаем диск
+    dd if=/dev/zero of="$disk" bs=1M count=1 2>/dev/null
+    sleep 1
+    force_reload_partitions "$disk"
+    
+    if [ "$DISK_SIZE_GB" -lt 1 ]; then
+        error_exit "Диск слишком мал (меньше 1GB)"
+    elif [ "$DISK_SIZE_GB" -lt 2 ]; then
+        PART_COUNT=1
+        echo "Создаю 1 раздел (диск менее 2GB)" | tee -a $LOG
+        
+        parted -s ${disk} mklabel gpt || error_exit "Ошибка создания GPT таблицы"
+        sleep 1
+        parted -s ${disk} mkpart "extroot" ext4 2048s 100% || error_exit "Ошибка создания раздела"
+        sleep 2
+        force_reload_partitions "$disk"
+        safe_mkfs "${disk}1" "ext4" "extroot" || error_exit "Ошибка создания файловой системы"
+        
+    elif [ "$DISK_SIZE_GB" -lt 4 ]; then
+        PART_COUNT=2
+        echo "Создаю 2 раздела (диск 2-3GB)" | tee -a $LOG
+        
+        parted -s ${disk} mklabel gpt || error_exit "Ошибка создания GPT таблицы"
+        sleep 1
+        
+        parted -s ${disk} mkpart "extroot" ext4 2048s 1GB || error_exit "Ошибка создания extroot"
+        sleep 2
+        force_reload_partitions "$disk"
+        safe_mkfs "${disk}1" "ext4" "extroot" || error_exit "Ошибка создания файловой системы"
+        
+        parted -s ${disk} mkpart "swap" linux-swap 1GB 100% || error_exit "Ошибка создания swap"
+        sleep 2
+        force_reload_partitions "$disk"
+        safe_mkfs "${disk}2" "swap" "swap" || error_exit "Ошибка создания swap"
+        
+    elif [ "$DISK_SIZE_GB" -lt 64 ]; then
+        PART_COUNT=3
+        echo "Создаю 3 раздела (диск 4-32GB)" | tee -a $LOG
+        
+        parted -s ${disk} mklabel gpt || error_exit "Ошибка создания GPT таблицы"
+        sleep 1
+        
+        parted -s ${disk} mkpart "extroot" ext4 2048s 1GB || error_exit "Ошибка создания extroot"
+        sleep 2
+        force_reload_partitions "$disk"
+        safe_mkfs "${disk}1" "ext4" "extroot" || error_exit "Ошибка создания файловой системы"
+        
+        parted -s ${disk} mkpart "swap" linux-swap 1GB 2GB || error_exit "Ошибка создания swap"
+        sleep 2
+        force_reload_partitions "$disk"
+        safe_mkfs "${disk}2" "swap" "swap" || error_exit "Ошибка создания swap"
+        
+        parted -s ${disk} mkpart "data" ext4 2GB 100% || error_exit "Ошибка создания data"
+        sleep 2
+        force_reload_partitions "$disk"
+        safe_mkfs "${disk}3" "ext4" "data" || error_exit "Ошибка создания файловой системы"
+        
+    else
+        PART_COUNT=4
+        echo "Создаю 4 раздела (диск 64GB и более)" | tee -a $LOG
+        
+        parted -s ${disk} mklabel gpt || error_exit "Ошибка создания GPT таблицы"
+        sleep 1
+        
+        parted -s ${disk} mkpart "extroot" ext4 2048s 1GB || error_exit "Ошибка создания extroot"
+        sleep 2
+        force_reload_partitions "$disk"
+        safe_mkfs "${disk}1" "ext4" "extroot" || error_exit "Ошибка создания файловой системы"
+        
+        parted -s ${disk} mkpart "swap" linux-swap 1GB 2GB || error_exit "Ошибка создания swap"
+        sleep 2
+        force_reload_partitions "$disk"
+        safe_mkfs "${disk}2" "swap" "swap" || error_exit "Ошибка создания swap"
+        
+        parted -s ${disk} mkpart "data" ext4 2GB 8GB || error_exit "Ошибка создания data"
+        sleep 2
+        force_reload_partitions "$disk"
+        safe_mkfs "${disk}3" "ext4" "data" || error_exit "Ошибка создания файловой системы"
+        
+        parted -s ${disk} mkpart "extra" ext4 8GB 100% || error_exit "Ошибка создания extra"
+        sleep 2
+        force_reload_partitions "$disk"
+        safe_mkfs "${disk}4" "ext4" "extra" || error_exit "Ошибка создания файловой системы"
+    fi
+    
+    echo "$PART_COUNT" | tee -a $LOG
+}
+
+# Функция для удаления старых записей fstab
+cleanup_old_fstab_entries() {
+    local disk="$1"
+    
+    echo "Очищаю старые записи fstab..." | tee -a $LOG
+    
+    local uuids=""
+    
+    if [ ! -b "$disk" ]; then
+        echo "  Диск $disk не найден" | tee -a $LOG
+        return
+    fi
+    
+    for i in 1 2 3 4 5 6 7 8 9; do
+        local partition="${disk}${i}"
+        if [ -b "$partition" ]; then
+            local uuid=$(blkid -s UUID -o value "$partition" 2>/dev/null)
+            if [ -n "$uuid" ]; then
+                uuids="$uuids $uuid"
+            fi
+        fi
+    done
+    
+    if ! uci show fstab >/dev/null 2>&1; then
+        echo "  Конфигурация fstab не найдена" | tee -a $LOG
+        return
+    fi
+    
+    local configs=$(uci show fstab 2>/dev/null | grep -E "fstab\.(@mount\[|@swap\[|fstab\.[a-zA-Z])" | cut -d'=' -f1 | sed "s/'$//" | sort -u)
+    
+    for config in $configs; do
+        local device=$(uci -q get "${config}.device" 2>/dev/null)
+        local uuid=$(uci -q get "${config}.uuid" 2>/dev/null)
+        local remove=0
+        
+        if [ -n "$device" ] && echo "$device" | grep -q "^${disk}[0-9]*$"; then
+            remove=1
+        fi
+        
+        if [ -n "$uuid" ] && [ "$remove" -eq 0 ]; then
+            for disk_uuid in $uuids; do
+                if [ "$uuid" = "$disk_uuid" ]; then
+                    remove=1
+                    break
+                fi
+            done
+        fi
+        
+        if [ "$remove" -eq 1 ]; then
+            uci -q delete "$config"
+            echo "    УДАЛЕНО: $config" | tee -a $LOG
+        fi
+    done
+    
+    uci commit fstab
+    echo "Очистка завершена" | tee -a $LOG
+}
+
+# Функция для настройки fstab
+configure_fstab() {
+    local disk="$1"
+    local part_count="$2"
+    
+    echo "Настраиваю fstab..." | tee -a $LOG
+    
+    cleanup_old_fstab_entries "$disk"
+    
+    # Получаем точку монтирования overlay
+    eval $(block info | grep -o -e 'MOUNT="\S*/overlay"')
+    
+    # Удаляем старые настройки для этого диска
+    uci -q delete fstab.extroot
+    uci -q delete fstab.swap
+    uci -q delete fstab.data
+    uci -q delete fstab.extra
+    
+    # Настраиваем extroot (всегда раздел 1 с меткой extroot)
+    if [ -b "${disk}1" ]; then
+        local label=$(blkid -s LABEL -o value "${disk}1" 2>/dev/null)
+        if [ "$label" = "extroot" ]; then
+            uci set fstab.extroot="mount"
+            uci set fstab.extroot.device="${disk}1"
+            uci set fstab.extroot.target="${MOUNT}"
+            uci set fstab.extroot.enabled="1"
+            uci set fstab.extroot.enabled_fsck="0"
+            echo "  ✅ Настроен extroot: ${disk}1 (метка: $label)" | tee -a $LOG
+        else
+            echo "  ⚠️  Раздел ${disk}1 не имеет метки extroot (метка: $label)" | tee -a $LOG
+        fi
+    fi
+    
+    # Ищем swap раздел по метке
+    local swap_found=0
+    for i in 1 2 3 4 5 6 7 8 9; do
+        if [ -b "${disk}${i}" ]; then
+            local label=$(blkid -s LABEL -o value "${disk}${i}" 2>/dev/null)
+            local fstype=$(blkid -s TYPE -o value "${disk}${i}" 2>/dev/null)
+            
+            if [ "$label" = "swap" ] || [ "$fstype" = "swap" ]; then
+                uci set fstab.swap="swap"
+                uci set fstab.swap.device="${disk}${i}"
+                uci set fstab.swap.enabled="1"
+                echo "  ✅ Настроен swap: ${disk}${i} (метка: $label, тип: $fstype)" | tee -a $LOG
+                swap_found=1
+                
+                # Активируем swap
+                swapon "${disk}${i}" 2>/dev/null && echo "  ✅ Swap активирован" | tee -a $LOG
+                break
+            fi
+        fi
+    done
+    
+    if [ "$swap_found" -eq 0 ]; then
+        echo "  ⚠️  Swap раздел не найден" | tee -a $LOG
+    fi
+    
+    # Ищем data раздел по метке
+    local data_found=0
+    for i in 1 2 3 4 5 6 7 8 9; do
+        if [ -b "${disk}${i}" ] && [ "$i" -ne 1 ]; then
+            local label=$(blkid -s LABEL -o value "${disk}${i}" 2>/dev/null)
+            
+            if [ "$label" = "data" ]; then
+                uci set fstab.data="mount"
+                uci set fstab.data.device="${disk}${i}"
+                uci set fstab.data.target="/mnt/data"
+                uci set fstab.data.enabled="1"
+                uci set fstab.data.enabled_fsck="1"
+                uci set fstab.data.options="rw,sync,noatime,nodiratime"
+                echo "  ✅ Настроен data: ${disk}${i} (метка: $label)" | tee -a $LOG
+                data_found=1
+                
+                # Создаем точку монтирования и монтируем
+                mkdir -p /mnt/data
+                mount "${disk}${i}" /mnt/data 2>/dev/null && echo "  ✅ Data раздел смонтирован" | tee -a $LOG
+                break
+            fi
+        fi
+    done
+    
+    if [ "$data_found" -eq 0 ]; then
+        echo "  ⚠️  Data раздел не найден" | tee -a $LOG
+    fi
+    
+    # Ищем extra раздел по метке
+    local extra_found=0
+    for i in 1 2 3 4 5 6 7 8 9; do
+        if [ -b "${disk}${i}" ] && [ "$i" -ne 1 ]; then
+            local label=$(blkid -s LABEL -o value "${disk}${i}" 2>/dev/null)
+            
+            if [ "$label" = "extra" ]; then
+                uci set fstab.extra="mount"
+                uci set fstab.extra.device="${disk}${i}"
+                uci set fstab.extra.target="/mnt/extra"
+                uci set fstab.extra.enabled="1"
+                uci set fstab.extra.enabled_fsck="1"
+                uci set fstab.extra.options="rw,sync,noatime,nodiratime"
+                echo "  ✅ Настроен extra: ${disk}${i} (метка: $label)" | tee -a $LOG
+                extra_found=1
+                
+                # Создаем точку монтирования и монтируем
+                mkdir -p /mnt/extra
+                mount "${disk}${i}" /mnt/extra 2>/dev/null && echo "  ✅ Extra раздел смонтирован" | tee -a $LOG
+                break
+            fi
+        fi
+    done
+    
+    if [ "$extra_found" -eq 0 ]; then
+        echo "  ⚠️  Extra раздел не найден" | tee -a $LOG
+    fi
+    
+    # Сохраняем изменения
+    uci commit fstab || error_exit "Ошибка сохранения конфигурации fstab"
+    
+    # Настройка rootfs_data
+    ORIG="$(block info | sed -n -e '/MOUNT="\S*\/overlay"/s/:\s.*$//p')"
+    if [ -n "$ORIG" ]; then
+        uci -q delete fstab.rwm
+        uci set fstab.rwm="mount"
+        uci set fstab.rwm.device="${ORIG}"
+        uci set fstab.rwm.target="/rwm"
+        uci set fstab.rwm.enabled="1"
+        uci set fstab.rwm.enabled_fsck="1"
+        uci commit fstab
+        echo "  ✅ Настроен rwm: ${ORIG}" | tee -a $LOG
+    fi
+    
+    echo "  ✅ Настройка fstab завершена" | tee -a $LOG
+}
+
+# Функция для копирования данных в extroot
+copy_to_extroot() {
+    local disk="$1"
+    
+    echo "Копирую данные в extroot..." | tee -a $LOG
+    
+    if [ ! -b "${disk}1" ]; then
+        echo "  ❌ Раздел extroot не найден" | tee -a $LOG
+        return 1
+    fi
+    
+    # Создаем временную точку монтирования
+    mkdir -p /tmp/extroot_mount
+    
+    if mount "${disk}1" /tmp/extroot_mount 2>/dev/null; then
+        if [ -d "${MOUNT}" ] && [ "${MOUNT}" != "/" ]; then
+            echo "  Копирование из ${MOUNT} в /tmp/extroot_mount..." | tee -a $LOG
+            
+            # Копируем данные, исключая некоторые директории
+            tar -C "${MOUNT}" -cf - --exclude=./proc --exclude=./sys --exclude=./dev --exclude=./tmp --exclude=./mnt --exclude=./overlay . | tar -C /tmp/extroot_mount -xf - 2>/dev/null
+            
+            if [ $? -eq 0 ]; then
+                echo "  ✅ Данные успешно скопированы" | tee -a $LOG
+            else
+                echo "  ⚠️  Возникли ошибки при копировании" | tee -a $LOG
+            fi
+            
+            # Создаем необходимые директории
+            mkdir -p /tmp/extroot_mount/overlay
+            mkdir -p /tmp/extroot_mount/proc /tmp/extroot_mount/sys /tmp/extroot_mount/dev /tmp/extroot_mount/tmp /tmp/extroot_mount/mnt
+            chmod 755 /tmp/extroot_mount
+        else
+            echo "  ⚠️  Исходная точка монтирования не найдена" | tee -a $LOG
+        fi
+        
+        umount /tmp/extroot_mount 2>/dev/null
+        rmdir /tmp/extroot_mount 2>/dev/null
+    else
+        echo "  ⚠️  Не удалось смонтировать extroot для копирования данных" | tee -a $LOG
         return 1
     fi
 }
@@ -586,288 +897,6 @@ quick_check() {
     fi
 }
 
-# Функция для создания новой разметки
-create_new_partitions() {
-    local disk="$1"
-    
-    echo "Создаю новую разметку на диске $disk..." | tee -a $LOG
-    
-    DISK_SIZE_BYTES=$(get_disk_size "$disk") || error_exit "Не удалось определить размер диска"
-    
-    if [ -z "$DISK_SIZE_BYTES" ] || [ "$DISK_SIZE_BYTES" -eq 0 ]; then
-        error_exit "Не удалось определить размер диска"
-    fi
-    
-    DISK_SIZE_GB=$((DISK_SIZE_BYTES / 1024 / 1024 / 1024))
-    
-    echo "Размер диска: ${DISK_SIZE_GB}GB" | tee -a $LOG
-    
-    force_reload_partitions "$disk"
-    
-    if [ "$DISK_SIZE_GB" -lt 1 ]; then
-        error_exit "Диск слишком мал (меньше 1GB)"
-    elif [ "$DISK_SIZE_GB" -lt 2 ]; then
-        PART_COUNT=1
-        echo "Создаю 1 раздел (диск менее 2GB)" | tee -a $LOG
-        
-        parted -s ${disk} mklabel gpt || error_exit "Ошибка создания GPT таблицы"
-        sleep 1
-        parted -s ${disk} mkpart "extroot" ext4 2048s 100% || error_exit "Ошибка создания раздела"
-        sleep 2
-        force_reload_partitions "$disk"
-        mkfs.ext4 -L "extroot" ${disk}1 || error_exit "Ошибка создания файловой системы"
-        
-    elif [ "$DISK_SIZE_GB" -lt 4 ]; then
-        PART_COUNT=2
-        echo "Создаю 2 раздела (диск 2-3GB)" | tee -a $LOG
-        
-        parted -s ${disk} mklabel gpt || error_exit "Ошибка создания GPT таблицы"
-        sleep 1
-        
-        parted -s ${disk} mkpart "extroot" ext4 2048s 1GB || error_exit "Ошибка создания extroot"
-        sleep 2
-        force_reload_partitions "$disk"
-        mkfs.ext4 -L "extroot" ${disk}1 || error_exit "Ошибка создания файловой системы"
-        
-        parted -s ${disk} mkpart "swap" linux-swap 1GB 100% || error_exit "Ошибка создания swap"
-        sleep 2
-        force_reload_partitions "$disk"
-        mkswap -L "swap" ${disk}2 || error_exit "Ошибка создания swap"
-        
-    elif [ "$DISK_SIZE_GB" -lt 64 ]; then
-        PART_COUNT=3
-        echo "Создаю 3 раздела (диск 4-32GB)" | tee -a $LOG
-        
-        parted -s ${disk} mklabel gpt || error_exit "Ошибка создания GPT таблицы"
-        sleep 1
-        
-        parted -s ${disk} mkpart "extroot" ext4 2048s 1GB || error_exit "Ошибка создания extroot"
-        sleep 2
-        force_reload_partitions "$disk"
-        mkfs.ext4 -L "extroot" ${disk}1 || error_exit "Ошибка создания файловой системы"
-        
-        parted -s ${disk} mkpart "swap" linux-swap 1GB 2GB || error_exit "Ошибка создания swap"
-        sleep 2
-        force_reload_partitions "$disk"
-        mkswap -L "swap" ${disk}2 || error_exit "Ошибка создания swap"
-        
-        parted -s ${disk} mkpart "data" ext4 2GB 100% || error_exit "Ошибка создания data"
-        sleep 2
-        force_reload_partitions "$disk"
-        mkfs.ext4 -L "data" ${disk}3 || error_exit "Ошибка создания файловой системы"
-        
-    else
-        PART_COUNT=4
-        echo "Создаю 4 раздела (диск 64GB и более)" | tee -a $LOG
-        
-        parted -s ${disk} mklabel gpt || error_exit "Ошибка создания GPT таблицы"
-        sleep 1
-        
-        parted -s ${disk} mkpart "extroot" ext4 2048s 1GB || error_exit "Ошибка создания extroot"
-        sleep 2
-        force_reload_partitions "$disk"
-        mkfs.ext4 -L "extroot" ${disk}1 || error_exit "Ошибка создания файловой системы"
-        
-        parted -s ${disk} mkpart "swap" linux-swap 1GB 2GB || error_exit "Ошибка создания swap"
-        sleep 2
-        force_reload_partitions "$disk"
-        mkswap -L "swap" ${disk}2 || error_exit "Ошибка создания swap"
-        
-        parted -s ${disk} mkpart "data" ext4 2GB 8GB || error_exit "Ошибка создания data"
-        sleep 2
-        force_reload_partitions "$disk"
-        mkfs.ext4 -L "data" ${disk}3 || error_exit "Ошибка создания файловой системы"
-        
-        parted -s ${disk} mkpart "extra" ext4 8GB 100% || error_exit "Ошибка создания extra"
-        sleep 2
-        force_reload_partitions "$disk"
-        mkfs.ext4 -L "extra" ${disk}4 || error_exit "Ошибка создания файловой системы"
-    fi
-    
-    echo "$PART_COUNT" | tee -a $LOG
-}
-
-# Функция для удаления старых записей fstab
-cleanup_old_fstab_entries() {
-    local disk="$1"
-    
-    echo "Очищаю старые записи fstab..." | tee -a $LOG
-    
-    local uuids=""
-    echo "Поиск разделов на диске $disk:" | tee -a $LOG
-    
-    if [ ! -b "$disk" ]; then
-        echo "  Диск $disk не найден" | tee -a $LOG
-        return
-    fi
-    
-    for i in 1 2 3 4 5 6 7 8 9; do
-        local partition="${disk}${i}"
-        if [ -b "$partition" ]; then
-            echo "  Найден раздел: $partition" | tee -a $LOG
-            local uuid=$(blkid -s UUID -o value "$partition" 2>/dev/null)
-            if [ -n "$uuid" ]; then
-                echo "    UUID: $uuid" | tee -a $LOG
-                uuids="$uuids $uuid"
-            fi
-        fi
-    done
-    
-    if ! uci show fstab >/dev/null 2>&1; then
-        echo "  Конфигурация fstab не найдена" | tee -a $LOG
-        return
-    fi
-    
-    local configs=$(uci show fstab 2>/dev/null | grep -E "fstab\.(@mount\[|@swap\[|fstab\.[a-zA-Z])" | cut -d'=' -f1 | sed "s/'$//" | sort -u)
-    
-    for config in $configs; do
-        local device=$(uci -q get "${config}.device" 2>/dev/null)
-        local uuid=$(uci -q get "${config}.uuid" 2>/dev/null)
-        local target=$(uci -q get "${config}.target" 2>/dev/null)
-        local remove=0
-        
-        if [ -n "$device" ] && echo "$device" | grep -q "^${disk}[0-9]*$"; then
-            remove=1
-        fi
-        
-        if [ -n "$uuid" ] && [ "$remove" -eq 0 ]; then
-            for disk_uuid in $uuids; do
-                if [ "$uuid" = "$disk_uuid" ]; then
-                    remove=1
-                    break
-                fi
-            done
-        fi
-        
-        if [ "$remove" -eq 1 ]; then
-            uci -q delete "$config"
-            echo "    УДАЛЕНО: $config" | tee -a $LOG
-        fi
-    done
-    
-    echo "Очистка завершена" | tee -a $LOG
-}
-
-# Функция для настройки fstab
-configure_fstab() {
-    local disk="$1"
-    local part_count="$2"
-    
-    echo "Настраиваю fstab..." | tee -a $LOG
-    
-    cleanup_old_fstab_entries "$disk"
-    
-    eval $(block info | grep -o -e 'MOUNT="\S*/overlay"')
-    
-    uci -q delete fstab.extroot
-    uci -q delete fstab.swap
-    uci -q delete fstab.data
-    uci -q delete fstab.extra
-    
-    if [ -b "${disk}1" ]; then
-        uci set fstab.extroot="mount"
-        uci set fstab.extroot.device="${disk}1"
-        uci set fstab.extroot.target="${MOUNT}"
-        uci set fstab.extroot.enabled="1"
-        echo "  Настроен extroot: ${disk}1" | tee -a $LOG
-    fi
-    
-    # Ищем swap раздел (может быть не вторым по счету)
-    local swap_found=0
-    for i in 1 2 3 4 5 6 7 8 9; do
-        if [ -b "${disk}${i}" ]; then
-            local fs_type=$(blkid -s TYPE -o value "${disk}${i}" 2>/dev/null)
-            local label=$(blkid -s LABEL -o value "${disk}${i}" 2>/dev/null)
-            if [ "$fs_type" = "swap" ] || [ "$label" = "swap" ]; then
-                uci set fstab.swap="swap"
-                uci set fstab.swap.device="${disk}${i}"
-                uci set fstab.swap.enabled="1"
-                echo "  Настроен swap: ${disk}${i}" | tee -a $LOG
-                swap_found=1
-                break
-            fi
-        fi
-    done
-    
-    # Ищем data раздел
-    for i in 1 2 3 4 5 6 7 8 9; do
-        if [ -b "${disk}${i}" ] && [ "$i" -ne 1 ]; then
-            local label=$(blkid -s LABEL -o value "${disk}${i}" 2>/dev/null)
-            if [ "$label" = "data" ] || [ "$label" = "extra" ]; then
-                uci set fstab.data="mount"
-                uci set fstab.data.device="${disk}${i}"
-                uci set fstab.data.target="/mnt/data"
-                uci set fstab.data.enabled="1"
-                echo "  Настроен data: ${disk}${i}" | tee -a $LOG
-                break
-            fi
-        fi
-    done
-    
-    # Ищем extra раздел
-    for i in 1 2 3 4 5 6 7 8 9; do
-        if [ -b "${disk}${i}" ] && [ "$i" -ne 1 ]; then
-            local label=$(blkid -s LABEL -o value "${disk}${i}" 2>/dev/null)
-            if [ "$label" = "extra" ]; then
-                uci set fstab.extra="mount"
-                uci set fstab.extra.device="${disk}${i}"
-                uci set fstab.extra.target="/mnt/extra"
-                uci set fstab.extra.enabled="1"
-                echo "  Настроен extra: ${disk}${i}" | tee -a $LOG
-                break
-            fi
-        fi
-    done
-    
-    uci commit fstab || error_exit "Ошибка сохранения конфигурации fstab"
-    
-    ORIG="$(block info | sed -n -e '/MOUNT="\S*\/overlay"/s/:\s.*$//p')"
-    if [ -n "$ORIG" ]; then
-        uci -q delete fstab.rwm
-        uci set fstab.rwm="mount"
-        uci set fstab.rwm.device="${ORIG}"
-        uci set fstab.rwm.target="/rwm"
-        uci commit fstab
-    fi
-}
-
-# Функция для копирования данных в extroot
-copy_to_extroot() {
-    local disk="$1"
-    
-    echo "Копирую данные в extroot..." | tee -a $LOG
-    
-    if mount "${disk}1" /mnt 2>/dev/null; then
-        if [ -d "${MOUNT}" ]; then
-            tar -C "${MOUNT}" -cvf - . | tar -C /mnt -xf - 2>/dev/null
-            if [ $? -eq 0 ]; then
-                echo "  Данные успешно скопированы" | tee -a $LOG
-            else
-                echo "  Предупреждение: возникли ошибки при копировании" | tee -a $LOG
-            fi
-        else
-            echo "  Предупреждение: исходная точка монтирования не найдена" | tee -a $LOG
-        fi
-        umount /mnt 2>/dev/null
-    else
-        echo "  Предупреждение: не удалось смонтировать extroot для копирования данных" | tee -a $LOG
-    fi
-}
-
-# Функция для подсчета существующих разделов
-count_existing_partitions() {
-    local disk="$1"
-    local count=0
-    
-    for i in 1 2 3 4 5 6 7 8 9; do
-        if [ -b "${disk}${i}" ]; then
-            count=$((count + 1))
-        fi
-    done
-    
-    echo "$count"
-}
-
 # Основной код
 main() {
     [ -b "$DISK" ] || error_exit "Диск $DISK не найден"
@@ -902,7 +931,7 @@ main() {
             local label=$(blkid -s LABEL -o value "${DISK}1" 2>/dev/null)
             if [ "$label" = "extroot" ]; then
                 has_extroot=1
-                echo "✅ Extroot раздел найден (${DISK}1)" | tee -a $LOG
+                echo "✅ Extroot раздел найден (${DISK}1, метка: $label)" | tee -a $LOG
             fi
         fi
         
@@ -910,7 +939,6 @@ main() {
             echo "❌ Extroot раздел отсутствует!" | tee -a $LOG
             echo "Пытаюсь создать недостающие разделы без потери данных..." | tee -a $LOG
             
-            # Пробуем создать недостающие разделы
             NEW_PART_COUNT=$(create_missing_partitions "$DISK" "$DISK_SIZE_GB" "$EXISTING_PARTS")
             CREATE_RESULT=$?
             
@@ -919,7 +947,6 @@ main() {
                 PART_COUNT="$NEW_PART_COUNT"
                 configure_fstab "$DISK" "$PART_COUNT"
                 
-                # Проверяем, нужно ли копировать данные в extroot
                 if [ -b "${DISK}1" ]; then
                     OVERLAY_MOUNT=$(block info | grep 'MOUNT="[^"]*/overlay"' | cut -d'"' -f2)
                     if [ -n "$OVERLAY_MOUNT" ]; then
@@ -952,7 +979,6 @@ main() {
         else
             echo "Extroot присутствует. Проверяю остальные разделы..." | tee -a $LOG
             
-            # Пробуем создать недостающие разделы (swap, data, extra)
             NEW_PART_COUNT=$(create_missing_partitions "$DISK" "$DISK_SIZE_GB" "$EXISTING_PARTS")
             CREATE_RESULT=$?
             
@@ -965,12 +991,16 @@ main() {
             
             configure_fstab "$DISK" "$PART_COUNT"
             
-            # Проверяем, нужно ли копировать данные в extroot
             OVERLAY_MOUNT=$(block info | grep 'MOUNT="[^"]*/overlay"' | cut -d'"' -f2)
-            if [ -n "$OVERLAY_MOUNT" ] && [ -b "${DISK}1" ] && ! mountpoint -q "$OVERLAY_MOUNT" 2>/dev/null; then
-                MOUNT="$OVERLAY_MOUNT"
-                echo "Extroot еще не настроен. Копирую данные..." | tee -a $LOG
-                copy_to_extroot "$DISK"
+            if [ -n "$OVERLAY_MOUNT" ] && [ -b "${DISK}1" ]; then
+                local is_mounted=$(mount | grep -c "${DISK}1")
+                if [ "$is_mounted" -eq 0 ]; then
+                    MOUNT="$OVERLAY_MOUNT"
+                    echo "Extroot еще не настроен. Копирую данные..." | tee -a $LOG
+                    copy_to_extroot "$DISK"
+                else
+                    echo "Extroot уже настроен. Пропускаю копирование." | tee -a $LOG
+                fi
             fi
         fi
     fi
@@ -983,26 +1013,45 @@ main() {
     fi
     
     echo "" | tee -a $LOG
-    echo "Настройка fstab завершена успешно!" | tee -a $LOG
-
-    # Автоматическая перезагрузка всегда при изменении разметки
-    if [ "$EXISTING_PARTS" -eq 0 ] || [ "$CHECK_RESULT" = "false" ]; then
-        echo "Перезагружаюсь для применения изменений..." | tee -a $LOG
-        sleep 3
-        reboot
-    else
-        echo "Изменения применены без переразметки." | tee -a $LOG
-        echo "Для полного применения изменений в extroot может потребоваться перезагрузка." | tee -a $LOG
-        if [ -t 0 ]; then
-            read -p "Перезагрузить сейчас? [y/N]: " REBOOT_NOW
-            if [ "$REBOOT_NOW" = "y" ] || [ "$REBOOT_NOW" = "Y" ]; then
-                echo "Перезагружаюсь..." | tee -a $LOG
-                sleep 3
-                reboot
-            fi
+    echo "Разделы и их метки:" | tee -a $LOG
+    for i in 1 2 3 4 5 6 7 8 9; do
+        if [ -b "${DISK}${i}" ]; then
+            label=$(blkid -s LABEL -o value "${DISK}${i}" 2>/dev/null)
+            fstype=$(blkid -s TYPE -o value "${DISK}${i}" 2>/dev/null)
+            echo "  ${DISK}${i}: $fstype, метка: $label" | tee -a $LOG
         fi
+    done
+    
+    echo "" | tee -a $LOG
+    echo "Настройка fstab завершена!" | tee -a $LOG
+    echo "Текущие настройки fstab:" | tee -a $LOG
+    uci show fstab | tee -a $LOG
+    
+    echo "" | tee -a $LOG
+    echo "Смонтированные разделы:" | tee -a $LOG
+    mount | grep "^$DISK" 2>/dev/null || echo "  Нет смонтированных разделов" | tee -a $LOG
+    
+    echo "" | tee -a $LOG
+    echo "Swap разделы:" | tee -a $LOG
+    swapon -s 2>/dev/null | grep "^$DISK" || echo "  Нет активных swap разделов" | tee -a $LOG
+    
+    echo "" | tee -a $LOG
+    echo "Для применения всех изменений требуется перезагрузка." | tee -a $LOG
+    
+    if [ -t 0 ]; then
+        read -p "Перезагрузить сейчас? [y/N]: " REBOOT_NOW
+        if [ "$REBOOT_NOW" = "y" ] || [ "$REBOOT_NOW" = "Y" ]; then
+            echo "Перезагружаюсь..." | tee -a $LOG
+            sleep 3
+            reboot
+        else
+            echo "Перезагрузка отложена. Рекомендуется перезагрузить систему вручную." | tee -a $LOG
+        fi
+    else
+        echo "Автоматическая перезагрузка через 5 секунд..." | tee -a $LOG
+        sleep 5
+        reboot
     fi
-
 }
 
 # Запускаем основной код
