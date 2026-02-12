@@ -150,6 +150,17 @@ echo "Перезагрузка через 5 секунд..." | tee -a $LOG
 sleep 5
 
 # Перезагрузка
-echo "=== Начинаю перезагрузку ===" | tee -a $LOG
-sync
-reboot
+    if [ -t 0 ]; then
+        read -p "Перезагрузить сейчас? [y/N]: " REBOOT_NOW
+        if [ "$REBOOT_NOW" = "y" ] || [ "$REBOOT_NOW" = "Y" ]; then
+            echo "Перезагружаюсь..." | tee -a $LOG
+            sleep 3
+            reboot
+        else
+            echo "Перезагрузка отложена. Рекомендуется перезагрузить систему вручную." | tee -a $LOG
+        fi
+    else
+        echo "=== Начинаю перезагрузку ===" | tee -a $LOG
+        sync
+        reboot
+    fi
