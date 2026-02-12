@@ -871,7 +871,7 @@ main() {
     if [ "$EXISTING_PARTS" -eq 0 ] || [ "$CHECK_RESULT" = "false" ]; then
         echo "Перезагружаюсь для применения изменений..." | tee -a $LOG
         sleep 3
-        reboot
+#        reboot
     else
         echo "Изменения применены без переразметки." | tee -a $LOG
         echo "Для полного применения изменений в extroot может потребоваться перезагрузка." | tee -a $LOG
@@ -884,7 +884,7 @@ main() {
             fi
         else
             echo "Перезагружаюсь..." | tee -a $LOG
-            reboot
+#            reboot
         fi
     fi
 }
