@@ -25,7 +25,7 @@ done
 echo "1. Настройка системы..." | tee -a $LOG
 
 # Разметка и подключение USB
-cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/mount_usb.sh -O mount_usb.sh && chmod +x mount_usb.sh && ./mount_usb.sh
+cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/mount_usb.sh >> $LOG 2>&1 && chmod +x mount_usb.sh && ./mount_usb.sh
 
 # --------------------------------------------------
 # ШАГ 2: Подготовка пост-перезагрузочного скрипта
@@ -61,7 +61,7 @@ done
 # ФИНАЛЬНЫЕ НАСТРОЙКИ:
 echo "Выполняю финальные настройки..." >> $LOG
 
-cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup_required.sh -O setup_required.sh && chmod +x setup_required.sh && ./setup_required.sh
+cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup_required.sh >> $LOG 2>&1 && chmod +x setup_required.sh && ./setup_required.sh
 
 # --------------------------------------------------
 # ОЧИСТКА: делаем запуск однократным
