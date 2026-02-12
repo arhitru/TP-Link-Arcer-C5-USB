@@ -5,15 +5,15 @@ LOG="/root/setup.log"
 echo "=== Начало установки: $(date) ===" > $LOG
 
 # Проверяем что система загрузилась
-echo "Проверка системы:" >> $LOG
+echo "Проверка системы:" | tee -a $LOG
 uptime >> $LOG 2>&1
 ifconfig >> $LOG 2>&1
 
 # Ждем запуска сети
-echo "Ожидание сети..."
+echo "Ожидание сети..." | tee -a $LOG
 for i in $(seq 1 30); do
     if ping -c 1 -W 1 8.8.8.8 >/dev/null 2>&1; then
-        echo "Сеть доступна"  >> $LOG
+        echo "Сеть доступна" | tee -a $LOG
         break
     fi
     sleep 1
@@ -30,7 +30,7 @@ cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/
 # Установка недостающих пакетов
 cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/postboot.sh >> $LOG 2>&1 && chmod +x postboot.sh
 cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup_required.sh >> $LOG 2>&1 && chmod +x setup_required.sh
-# cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup_required.conf >> $LOG 2>&1
+cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup_required.conf >> $LOG 2>&1
 
 /root/mount_usb.sh
 
