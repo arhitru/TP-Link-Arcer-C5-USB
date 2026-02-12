@@ -1,4 +1,6 @@
-LOG="/root/install.log"
+#!/bin/sh
+
+LOG="/root/boot.log"
 echo "=== Начало установки: $(date) ===" > $LOG
 
 echo "Проверка системы:" >> $LOG
@@ -13,4 +15,5 @@ for i in $(seq 1 120); do
     fi
     sleep 1
 done
-cd /tmp && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup.sh && chmod +x setup.sh && ./setup.sh
+echo "Loading..." >> $LOG
+cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup.sh >> $LOG 2>&1 && chmod +x setup.sh && ./setup.sh
