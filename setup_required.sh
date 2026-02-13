@@ -572,7 +572,7 @@ main() {
     
     # Удаляем сам скрипт
     rm -f /root/setup_required.sh
-    echo "Скрипт удален" >> $LOG
+    log_warn "Скрипт setup_required удален"
 
     if [ $AUTO_MODE -eq 0 ]; then
         echo -n "Перезагрузить систему сейчас? (y/N): " >&3
