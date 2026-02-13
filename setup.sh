@@ -1,6 +1,7 @@
 #!/bin/sh
 # Основной скрипт установки/настройки OpenWRT
 
+CONFIG_FILE="${SCRIPT_DIR}/outline.conf"
 LOG="/root/setup.log"
 echo "=== Начало установки: $(date) ===" > $LOG
 
@@ -102,6 +103,24 @@ if [ -t 0 ]; then
             read -p "Use Outline as default gateway? [y/N]: " DEFAULT_GATEWAY
             if [ "$DEFAULT_GATEWAY" = "y" ] || [ "$DEFAULT_GATEWAY" = "Y" ]; then
                 export OUTLINE_DEFAULT_GATEWAY=$DEFAULT_GATEWAY
+            fi
+            if [! -f "$CONFIG_FILE" ]; then
+                echo "Файл конфигурации Outline" | tee -a $LOG
+                cat > "$CONFIG_FILE" << 'EOF'
+# ============================================================================
+# Конфигурация outline_vpn
+# ============================================================================
+
+TUNNEL="tun2socks"
+OUTLINECONF=$OUTLINECONF
+DNS_RESOLVER=$DNS_RESOLVER
+COUNTRY=$COUNTRY
+OUTLINE_DEFAULT_GATEWAY=$DEFAULT_GATEWAY
+
+EOF
+                echo "Создан файл конфигурации по умолчанию: $CONFIG_FILE" | tee -a $LOG
+                cd /root && wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/getdomains-install-outline.sh -O /root/outline_vpn.sh && chmod +x outline_vpn.sh
+
             fi
         fi
     fi
@@ -226,6 +245,26 @@ if ! grep -q "postboot.sh" /etc/rc.local; then
     echo "Добавлено в автозагрузку" | tee -a $LOG
 else
     echo "Уже в автозагрузке" | tee -a $LOG
+fi
+if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
+    echo "Настройка автозапуска настройки Outline VPN" | tee -a $LOG
+    # Проверяем, не добавлен ли уже наш скрипт
+    if ! grep -q "outline_vpn.sh" /etc/rc.local; then
+        # Добавляем вызов в конец (но перед exit если есть)
+        if grep -q "^exit" /etc/rc.local; then
+            # Вставляем перед exit
+            sed -i '/^exit/i # Auto-generated post-boot script (will self-remove)\n/root/outline_vpn.sh &' /etc/rc.local
+        else
+            # Добавляем в конец
+            echo '' >> /etc/rc.local
+            echo '# Auto-generated post-boot script (will self-remove)' >> /etc/rc.local
+            echo '/root/outline_vpn.sh' >> /etc/rc.local
+        fi
+        
+        echo "Добавлено в автозагрузку" | tee -a $LOG
+    else
+        echo "Уже в автозагрузке" | tee -a $LOG
+    fi
 fi
 
 # Показываем итог
