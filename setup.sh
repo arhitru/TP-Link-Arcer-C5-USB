@@ -285,6 +285,10 @@ echo "Все настройки сохранены." | tee -a $LOG
 echo "После перезагрузки скрипт выполнится автоматически." | tee -a $LOG
 echo "Лог будет в /root/postboot.log" | tee -a $LOG
 
+# Удаляем сам скрипт
+rm -f /root/setup.sh
+echo "Скрипт удален" >> $LOG
+
 # Перезагрузка
     if [ -t 0 ]; then
         read -p "Перезагрузить сейчас? [y/N]: " REBOOT_NOW
