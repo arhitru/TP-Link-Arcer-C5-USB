@@ -892,7 +892,7 @@ main() {
             fi
         else
             echo "Перезагружаюсь..." | tee -a $LOG
-#            reboot
+            reboot
         fi
     fi
 }
