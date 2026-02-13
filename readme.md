@@ -46,7 +46,8 @@
 **Настройка USB и пакетов скриптами**
 1. Зайти в консоль через Putty или MobaXterm.
 2. Подключить в Wan-порт кабель с раздачей интернета по DHCP.
-3. Вставить команду
+3. Установить USB-накопитель.
+4. Вставить команду
 ```
 cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup.sh >> $LOG 2>&1 && chmod +x setup.sh && ./setup.sh
 ```
@@ -54,7 +55,8 @@ cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/
 
 **Настройка USB вводом команд**
 1. Зайти в консоль через Putty или MobaXterm.
-2. Последовательно вводим команды:
+2. Установить USB-накопитель.
+3. Последовательно вводим команды:
 ```
 DISK="/dev/sda"
 parted -s ${DISK} mklabel gpt
@@ -124,7 +126,7 @@ tar -C ${MOUNT} -cvf - . | tar -C /mnt -xf -
 # Reboot the device to apply the changes.
 reboot
 ```
-3. Пакеты можно установить из консоли или web-интерфейса
+4. Пакеты можно установить из консоли или web-интерфейса
 
 ## **Проверка**
 
