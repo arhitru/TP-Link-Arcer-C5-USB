@@ -25,6 +25,24 @@ if [ -t 0 ]; then
     if [ "$OUTLINE" = "y" ] || [ "$OUTLINE" = "Y" ]; then
         read -p "Do you want to set up an Outline VPN? [y/N]: " TUN
         if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
+            # Проверка версии OpenWrt
+            if [ -f /etc/os-release ]; then
+                # shellcheck source=/etc/os-release
+                . /etc/os-release
+                log_info "Версия OpenWrt: $OPENWRT_RELEASE"
+                
+                VERSION=$(grep 'VERSION=' /etc/os-release | cut -d'"' -f2)
+                VERSION_ID=$(echo "$VERSION" | awk -F. '{print $1}')
+                export VERSION_ID
+                
+                # Проверка совместимости
+                if [ "$VERSION_ID" -lt 19 ]; then
+                    log_warn "Версия OpenWrt ($VERSION_ID) может быть несовместима"
+                fi
+            else
+                VERSION_ID=0
+                log_warn "Не удалось определить версию OpenWrt"
+            fi
             export TUNNEL="tun2socks"
             # Считывает пользовательскую переменную для конфигурации Outline (Shadowsocks)
             read -p "Enter Outline (Shadowsocks) Config (format ss://base64coded@HOST:PORT/?outline=1): " OUTLINECONF
@@ -116,7 +134,7 @@ OUTLINECONF=$OUTLINECONF
 DNS_RESOLVER=$DNS_RESOLVER
 COUNTRY=$COUNTRY
 OUTLINE_DEFAULT_GATEWAY=$DEFAULT_GATEWAY
-
+VERSION_ID=$VERSION_ID
 EOF
                 echo "Создан файл конфигурации по умолчанию: $CONFIG_FILE" | tee -a $LOG
                 cd /root && wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/getdomains-install-outline.sh -O /root/outline_vpn.sh && chmod +x outline_vpn.sh
@@ -287,7 +305,7 @@ echo "Лог будет в /root/postboot.log" | tee -a $LOG
 
 # Удаляем сам скрипт
 rm -f /root/setup.sh
-echo "Скрипт удален" >> $LOG
+echo "Скрипт удален" | tee -a $LOG
 
 # Перезагрузка
     if [ -t 0 ]; then
