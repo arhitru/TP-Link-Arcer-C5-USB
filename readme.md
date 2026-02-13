@@ -49,7 +49,7 @@
 3. Установить USB-накопитель.
 4. Вставить команду
 ```
-cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup.sh >> $LOG 2>&1 && chmod +x setup.sh && ./setup.sh
+cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup.sh && chmod +x setup.sh && ./setup.sh
 ```
 4. Подождать 5 минут. 
 
