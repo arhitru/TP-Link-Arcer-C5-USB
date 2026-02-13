@@ -6,10 +6,10 @@
 
 Установленные пакеты:
 
-    base-files ca-bundle dnsmasq dropbear firewall4 fstools kmod-gpio-button-hotplug 
-    kmod-nft-offload kmod-rt2800-soc libc libgcc libustream-mbedtls logd mtd netifd 
-    nftables opkg procd-ujail swconfig uci uclient-fetch urandom-seed urngd wpad-basic-mbedtls 
-    kmod-usb2 kmod-mt76x2 kmod-switch-rtl8367b luci 
+    base-files ca-bundle dnsmasq dropbear firewall4 fstools kmod-gpio-button-hotplug kmod-leds-gpio 
+    kmod-nft-offload kmod-rt2800-soc libc libgcc libustream-mbedtls logd mtd netifd nftables opkg 
+    procd-ujail swconfig uci uclient-fetch urandom-seed urngd wpad-basic-mbedtls kmod-usb2 
+    kmod-usb-ledtrig-usbport kmod-mt76x2 kmod-switch-rtl8367b luci 
     block-mount kmod-fs-ext4 e2fsprogs parted kmod-usb-storage
 
 Понадобится USB-накопитель. ВСЕ данные на нём будут ПОТЕРЯНЫ.
