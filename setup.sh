@@ -19,20 +19,114 @@ for i in $(seq 1 30); do
     sleep 1
 done
 
+if [ -t 0 ]; then
+    read -p "Do you have the Outline key? [y/N]: " OUTLINE
+    if [ "$OUTLINE" = "y" ] || [ "$OUTLINE" = "Y" ]; then
+        read -p "Do you want to set up an Outline VPN? [y/N]: " TUN
+        if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
+            export TUNNEL="tun2socks"
+            # Считывает пользовательскую переменную для конфигурации Outline (Shadowsocks)
+            read -p "Enter Outline (Shadowsocks) Config (format ss://base64coded@HOST:PORT/?outline=1): " OUTLINECONF
+            export  OUTLINECONF=$OUTLINECONF
+
+            printf "\033[33mConfigure DNSCrypt2 or Stubby? It does matter if your ISP is spoofing DNS requests\033[0m\n"
+            echo "Select:"
+            echo "1) No [Default]"
+            echo "2) DNSCrypt2 (10.7M)"
+            echo "3) Stubby (36K)"
+
+            while true; do
+            read -r -p '' DNS_RESOLVER
+                case $DNS_RESOLVER in 
+
+                1) 
+                    echo "Skiped"
+                    break
+                    ;;
+
+                2)
+                    export DNS_RESOLVER="DNSCRYPT"
+                    break
+                    ;;
+
+                3) 
+                    export DNS_RESOLVER="STUBBY"
+                    break
+                    ;;
+
+                *)
+                    echo "Choose from the following options"
+                    ;;
+                esac
+            done
+
+            printf "\033[33mChoose you country\033[0m\n"
+            echo "Select:"
+            echo "1) Russia inside. You are inside Russia"
+            echo "2) Russia outside. You are outside of Russia, but you need access to Russian resources"
+            echo "3) Ukraine. uablacklist.net list"
+            echo "4) Skip script creation"
+
+            while true; do
+            read -r -p '' COUNTRY
+                case $COUNTRY in 
+
+                1) 
+                    export COUNTRY="russia_inside"
+                    break
+                    ;;
+
+                2)
+                    export COUNTRY="russia_outside"
+                    break
+                    ;;
+
+                3) 
+                    export COUNTRY="ukraine"
+                    break
+                    ;;
+
+                4) 
+                    echo "Skiped"
+                    export COUNTRY=0
+                    break
+                    ;;
+
+                *)
+                    echo "Choose from the following options"
+                    ;;
+                esac
+            done
+            # Ask user to use Outline as default gateway
+            # Задает вопрос пользователю о том, следует ли использовать Outline в качестве шлюза по умолчанию
+            read -p "Use Outline as default gateway? [y/N]: " DEFAULT_GATEWAY
+            if [ "$DEFAULT_GATEWAY" = "y" ] || [ "$DEFAULT_GATEWAY" = "Y" ]; then
+                export OUTLINE_DEFAULT_GATEWAY=$DEFAULT_GATEWAY
+            fi
+        fi
+    fi
+fi
+
 # --------------------------------------------------
 # ШАГ 1: Предварительные настройки
 # --------------------------------------------------
 echo "1. Настройка системы..." | tee -a $LOG
 
 # Разметка и подключение USB
-cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/mount_usb.sh >> $LOG 2>&1 && chmod +x mount_usb.sh
+if [ ! -f "/root/mount_usb.sh" ]; then
+    cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/mount_usb.sh >> $LOG 2>&1 && chmod +x mount_usb.sh
+fi
 
 # Установка недостающих пакетов
-cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/postboot.sh >> $LOG 2>&1 && chmod +x postboot.sh
-cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup_required.sh >> $LOG 2>&1 && chmod +x setup_required.sh
-cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup_required.conf >> $LOG 2>&1
-
-/root/mount_usb.sh
+if [ ! -f "/root/postboot.sh" ]; then
+    cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/postboot.sh >> $LOG 2>&1
+fi
+if [ ! -f "/root/setup_required.sh" ]; then
+    cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup_required.sh >> $LOG 2>&1 && chmod +x setup_required.sh
+fi
+if [ ! -f "/root/setup_required.conf" ]; then
+    cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup_required.conf >> $LOG 2>&1
+fi
 
 # --------------------------------------------------
 # ШАГ 2: Подготовка пост-перезагрузочного скрипта
@@ -41,7 +135,7 @@ echo "2. Подготовка пост-перезагрузки..." | tee -a $LO
 
 # Создаем скрипт
 if [ ! -f "/root/postboot.sh" ]; then
-cat << 'EOF' > /root/postboot.sh
+    cat << 'EOF' > /root/postboot.sh
 #!/bin/sh
 # Этот скрипт выполнится один раз после перезагрузки
 
@@ -139,9 +233,15 @@ echo "Итоговый rc.local:" | tee -a $LOG
 cat /etc/rc.local | tee -a $LOG
 
 # --------------------------------------------------
-# ШАГ 4: Перезагрузка
+# ШАГ 4: Настройка USB
 # --------------------------------------------------
-echo "4. Подготовка к перезагрузке..." | tee -a $LOG
+echo "4. Настройка USB" | tee -a $LOG
+/root/mount_usb.sh
+
+# --------------------------------------------------
+# ШАГ 5: Перезагрузка
+# --------------------------------------------------
+echo "5. Подготовка к перезагрузке..." | tee -a $LOG
 echo "Все настройки сохранены." | tee -a $LOG
 echo "После перезагрузки скрипт выполнится автоматически." | tee -a $LOG
 echo "Лог будет в /root/postboot.log" | tee -a $LOG
