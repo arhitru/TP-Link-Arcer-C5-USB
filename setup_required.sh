@@ -570,6 +570,10 @@ main() {
     log_info "Полный лог доступен в: $LOG_FILE"
     echo "[INFO] $(date '+%Y-%m-%d %H:%M:%S') - setup_required.sh завершил работу" >> /root/postboot.log
     
+    # Удаляем сам скрипт
+    rm -f /root/setup_required.sh
+    echo "Скрипт удален" >> $LOG
+
     if [ $AUTO_MODE -eq 0 ]; then
         echo -n "Перезагрузить систему сейчас? (y/N): " >&3
         read -r answer
