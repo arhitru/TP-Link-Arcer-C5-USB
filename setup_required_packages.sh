@@ -1,243 +1,588 @@
 #!/bin/sh
+# ============================================================================
+# OpenWrt Required Setup Script
+# ============================================================================
+# Автоматическая установка необходимых пакетов для OpenWrt
+# Версия: 2.0
+# ============================================================================
 
-# System Details
-MODEL=$(cat /tmp/sysinfo/model)
-source /etc/os-release
-printf "\033[34;1mModel: $MODEL\033[0m\n"
-printf "\033[34;1mVersion: $OPENWRT_RELEASE\033[0m\n"
+set -e  # Прерывать выполнение при ошибке
 
-if [ -f /etc/os-release ]; then
-    VERSION=$(grep 'VERSION=' /etc/os-release | cut -d'"' -f2)
-    VERSION_ID=$(echo $VERSION | awk -F. '{print $1}')
+# ============================================================================
+# Конфигурация
+# ============================================================================
+SCRIPT_NAME=$(basename "$0")
+SCRIPT_DIR=$(dirname "$0")
+LOG_DIR="/root"
+LOG_FILE="${LOG_DIR}/setup_required_$(date +%Y%m%d_%H%M%S).log"
+PID_FILE="/var/run/${SCRIPT_NAME}.pid"
+LOCK_FILE="/var/lock/${SCRIPT_NAME}.lock"
+CONFIG_FILE="${SCRIPT_DIR}/setup_required.conf"
+RETRY_COUNT=5
+
+# Режим выполнения (auto/interactive)
+if [ "$1" = "--auto" ] || [ "$1" = "-a" ]; then
+    AUTO_MODE=1
+    export AUTO_MODE
 else
-    VERSION_ID=0  # Значение по умолчанию для старых версий
-fi
-export VERSION_ID=$VERSION_ID
-
-printf "\033[31;1mAll actions performed here cannot be rolled back automatically.\033[0m\n"
-
-while true; do
-    read -p "Install MESH package? [y/n]: " MESH
-    case "$MESH" in
-        [Yy]) MESH="y"; break;;
-        [Nn]) MESH="n"; break;;
-        *) echo "Please answer y or n.";;
-    esac
-done
-
-while true; do
-    read -p "Do you want to set up an Outline VPN? [y/n]: " TUN
-    case "$TUN" in
-        [Yy]) TUN="y"; break;;
-        [Nn]) TUN="n"; break;;
-        *) echo "Please answer y or n.";;
-    esac
-done
-
-if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
-    export TUNNEL="tun2socks"
-    # Считывает пользовательскую переменную для конфигурации Outline (Shadowsocks)
-    read -p "Enter Outline (Shadowsocks) Config (format ss://base64coded@HOST:PORT/?outline=1): " OUTLINECONF
-    export  OUTLINECONF=$OUTLINECONF
-
-    printf "\033[33mConfigure DNSCrypt2 or Stubby? It does matter if your ISP is spoofing DNS requests\033[0m\n"
-    echo "Select:"
-    echo "1) No [Default]"
-    echo "2) DNSCrypt2 (10.7M)"
-    echo "3) Stubby (36K)"
-
-    while true; do
-    read -r -p '' DNS_RESOLVER
-        case $DNS_RESOLVER in 
-
-        1) 
-            echo "Skiped"
-            break
-            ;;
-
-        2)
-            export DNS_RESOLVER="DNSCRYPT"
-            break
-            ;;
-
-        3) 
-            export DNS_RESOLVER="STUBBY"
-            break
-            ;;
-
-        *)
-            echo "Choose from the following options"
-            ;;
-        esac
-    done
-
-    printf "\033[33mChoose you country\033[0m\n"
-    echo "Select:"
-    echo "1) Russia inside. You are inside Russia"
-    echo "2) Russia outside. You are outside of Russia, but you need access to Russian resources"
-    echo "3) Ukraine. uablacklist.net list"
-    echo "4) Skip script creation"
-
-    while true; do
-    read -r -p '' COUNTRY
-        case $COUNTRY in 
-
-        1) 
-            export COUNTRY="russia_inside"
-            break
-            ;;
-
-        2)
-            export COUNTRY="russia_outside"
-            break
-            ;;
-
-        3) 
-            export COUNTRY="ukraine"
-            break
-            ;;
-
-        4) 
-            echo "Skiped"
-            export COUNTRY=0
-            break
-            ;;
-
-        *)
-            echo "Choose from the following options"
-            ;;
-        esac
-    done
-    # Ask user to use Outline as default gateway
-    # Задает вопрос пользователю о том, следует ли использовать Outline в качестве шлюза по умолчанию
-    while [ "$DEFAULT_GATEWAY" != "y" ] && [ "$DEFAULT_GATEWAY" != "n" ]; do
-        read -p "Use Outline as default gateway? [y/n]: " DEFAULT_GATEWAY
-        export OUTLINE_DEFAULT_GATEWAY=$DEFAULT_GATEWAY
-    done
-
+    AUTO_MODE=0
+    export AUTO_MODE
 fi
 
-## **Сохранение списков программных пакетов при загрузке**
-# Сохранение статуса установленных пакетов opkg в /usr/lib/opkg/lists хранящемся в extroot, а не в RAM, экономит некоторую оперативную память и сохраняет списки пакетов доступными после перезагрузки.
-sed -i -r -e "s/^(lists_dir\sext\s).*/\1\/usr\/lib\/opkg\/lists/" /etc/opkg.conf
-printf "\033[32;1mChecking OpenWrt repo availability...\033[0m\n"
-opkg update | grep -q "Failed to download" && printf "\033[32;1mopkg failed. Check internet or date. Command for force ntp sync: ntpd -p ptbtime1.ptb.de\033[0m\n" && exit 1
-
-# Check for kmod-leds-gpio
-# Проверяет наличие kmod-leds-gpio
-if opkg list-installed | grep -q kmod-leds-gpio; then
-    printf "\033[32;1mkmod-leds-gpio already installed\033[0m\n"
-else
-    echo "Installed kmod-leds-gpio"
-    opkg install kmod-leds-gpio
-fi
-
-# Check for odhcp6c
-# Проверяет наличие odhcp6c
-if opkg list-installed | grep -q odhcp6c; then
-    printf "\033[32;1modhcp6c already installed\033[0m\n"
-else
-    echo "Installed odhcp6c"
-    opkg install odhcp6c
-fi
-
-# Check for odhcpd-ipv6only
-# Проверяет наличие odhcpd-ipv6only
-if opkg list-installed | grep -q odhcpd-ipv6only; then
-    printf "\033[32;1modhcpd-ipv6only already installed\033[0m\n"
-else
-    echo "Installed odhcpd-ipv6only"
-    opkg install odhcpd-ipv6only
-fi
-
-# Check for ppp
-# Проверяет наличие ppp
-if opkg list-installed | grep -q ppp; then
-    printf "\033[32;1mppp already installed\033[0m\n"
-else
-    echo "Installed ppp"
-    opkg install ppp
-fi
-
-# Check for ppp-mod-pppoe
-# Проверяет наличие ppp-mod-pppoe
-if opkg list-installed | grep -q ppp-mod-pppoe; then
-    printf "\033[32;1mppp-mod-pppoe already installed\033[0m\n"
-else
-    echo "Installed ppp-mod-pppoe"
-    opkg install ppp-mod-pppoe
-fi
-
-# Check for kmod-usb-ledtrig-usbport
-# Проверяет наличие kmod-usb-ledtrig-usbport
-if opkg list-installed | grep -q kmod-usb-ledtrig-usbport; then
-    printf "\033[32;1mkmod-usb-ledtrig-usbportc already installed\033[0m\n"
-else
-    echo "Installed kmod-usb-ledtrig-usbport"
-    opkg install kmod-usb-ledtrig-usbport
-fi
-
-# Установим пакет dnsmasq-full. По дефолту в OpenWrt идёт урезанный dnsmasq для экономии места.
-if opkg list-installed | grep -q dnsmasq-full; then
-    printf "\033[32;1mdnsmasq-full already installed\033[0m\n"
-else
-    echo "Installed dnsmasq-full"
-    cd /tmp/ && opkg download dnsmasq-full
-    opkg remove dnsmasq && opkg install dnsmasq-full --cache /tmp/
-    mv /etc/config/dhcp-opkg /etc/config/dhcp
-fi
-
-# Установим пакет для создания Mesh-сети.
-if [ "$MESH" = "y" ]; then
-    if opkg list-installed | grep -q wpad-mesh-openssl; then
-        printf "\033[32;1mwpad-mesh-openssl already installed\033[0m\n"
-    else
-        cd /tmp/ && opkg download wpad-mesh-openssl
-        if opkg list-installed | grep -q wpad-basic-mbedtls; then
-            opkg remove wpad-basic-mbedtls
-        fi
-        opkg install wpad-mesh-openssl --cache /tmp/
+# ============================================================================
+# Функции логирования
+# ============================================================================
+init_logging() {
+    # Создаем директорию для логов если её нет
+    if [ ! -d "$LOG_DIR" ]; then
+        mkdir -p "$LOG_DIR"
     fi
-fi
+    
+    # Перенаправляем весь вывод в лог-файл и в syslog
+    exec 3>&1 4>&2
+    exec 1> >(tee -a "$LOG_FILE" | logger -t "$SCRIPT_NAME" -p user.info)
+    exec 2> >(tee -a "$LOG_FILE" | logger -t "$SCRIPT_NAME" -p user.err)
+    
+    echo "================================================================================"
+    echo "=== Начало установки: $(date) ==="
+    echo "=== Режим выполнения: $([ $AUTO_MODE -eq 1 ] && echo "AUTO" || echo "INTERACTIVE") ==="
+    echo "=== Лог-файл: $LOG_FILE ==="
+    echo "================================================================================"
+}
 
-# Настройка IPTV
-if ! uci show firewall | grep -q "\.name='Allow-IGMP'"; then
-    echo "Adding firewall rule for IGMP..."
-    uci add firewall rule
-    uci set firewall.@rule[-1]=rule
-    uci set firewall.@rule[-1].name='Allow-IGMP'
-    uci set firewall.@rule[-1].src='wan'
-    uci set firewall.@rule[-1].proto='igmp'
-    uci set firewall.@rule[-1].target='ACCEPT'
-    uci commit firewall
-else
-    printf "\033[32;1mRule 'Allow-IGMP' already exists, skipping...\033[0m\n"
-fi
-if ! uci show firewall | grep -q "\.name='Allow-IPTV-IGMPPROXY'"; then
-    echo "Adding firewall rule for IGMPPROXY..."
-    uci add firewall rule
-    uci set firewall.@rule[-1]=rule
-    uci set firewall.@rule[-1].name='Allow-IPTV-IGMPPROXY'
-    uci set firewall.@rule[-1].src='wan'
-    uci set firewall.@rule[-1].dest='lan'
-    uci set firewall.@rule[-1].dest_ip='224.0.0.0/4'
-    uci set firewall.@rule[-1].proto='udp'
-    uci set firewall.@rule[-1].target='ACCEPT'
-    uci commit firewall
-else
-    printf "\033[32;1mRule 'Allow-IPTV-IGMPPROXY' already exists, skipping...\033[0m\n"
-fi
-if opkg list-installed | grep -q igmpproxy; then
-    printf "\033[32;1migmpproxy already installed\033[0m\n"
-else
-    echo "Installed igmpproxy"
-    opkg install igmpproxy
-fi
+log_info() {
+    echo "[INFO] $(date '+%Y-%m-%d %H:%M:%S') - $1"
+    printf "\033[32;1m[INFO] %s\033[0m\n" "$1" >&3 2>/dev/null || true
+}
 
-# Tunnel
-if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
-    cd /tmp
-    wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/getdomains-install-outline.sh -O getdomains-install-outline.sh
-    chmod +x getdomains-install-outline.sh
-    ./getdomains-install-outline.sh
-fi
+log_warn() {
+    echo "[WARN] $(date '+%Y-%m-%d %H:%M:%S') - $1"
+    printf "\033[33;1m[WARN] %s\033[0m\n" "$1" >&3 2>/dev/null || true
+}
+
+log_error() {
+    echo "[ERROR] $(date '+%Y-%m-%d %H:%M:%S') - $1"
+    printf "\033[31;1m[ERROR] %s\033[0m\n" "$1" >&3 2>/dev/null || true
+}
+
+log_success() {
+    echo "[SUCCESS] $(date '+%Y-%m-%d %H:%M:%S') - $1"
+    printf "\033[34;1m[SUCCESS] %s\033[0m\n" "$1" >&3 2>/dev/null || true
+}
+
+log_debug() {
+    if [ "$DEBUG" = "1" ]; then
+        echo "[DEBUG] $(date '+%Y-%m-%d %H:%M:%S') - $1"
+        printf "\033[36;1m[DEBUG] %s\033[0m\n" "$1" >&3 2>/dev/null || true
+    fi
+}
+
+# ============================================================================
+# Функции управления выполнением
+# ============================================================================
+check_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        log_error "Этот скрипт должен выполняться от root"
+        exit 1
+    fi
+}
+
+check_single_instance() {
+    if [ -f "$LOCK_FILE" ]; then
+        if kill -0 "$(cat "$LOCK_FILE")" 2>/dev/null; then
+            log_error "Скрипт уже запущен (PID: $(cat "$LOCK_FILE"))"
+            exit 1
+        else
+            log_warn "Обнаружен устаревший lock-файл, удаляем"
+            rm -f "$LOCK_FILE"
+        fi
+    fi
+    
+    echo $$ > "$LOCK_FILE"
+    trap 'rm -f "$LOCK_FILE" "$PID_FILE"; log_info "Скрипт завершен"; exec 1>&3 2>&4' EXIT
+    echo $$ > "$PID_FILE"
+}
+
+load_config() {
+    if [! -f "$CONFIG_FILE" ]; then
+        log_warn "Файл конфигурации не найден, используем значения по умолчанию"
+        # Создаем конфиг по умолчанию
+        cat > "$CONFIG_FILE" << 'EOF'
+# ============================================================================
+# Конфигурация установки пакетов для OpenWrt
+# ============================================================================
+
+# Список обязательных пакетов
+REQUIRED_PACKAGES="
+kmod-leds-gpio
+odhcp6c
+odhcpd-ipv6only
+ppp
+ppp-mod-pppoe
+kmod-usb-ledtrig-usbport
+igmpproxy
+"
+
+# Пакеты для замены
+REPLACE_PACKAGES="
+dnsmasq:dnsmasq-full
+wpad-basic-mbedtls:wpad-mesh-openssl
+"
+
+# Настройки NTP серверов
+NTP_SERVERS="ptbtime1.ptb.de pool.ntp.org"
+
+# Таймаут для операций (секунды)
+OPKG_TIMEOUT=300
+
+# Количество попыток при ошибке
+RETRY_COUNT=3
+
+# Режим отладки (0/1)
+DEBUG=0
+EOF
+        log_info "Создан файл конфигурации по умолчанию: $CONFIG_FILE"
+    fi
+    log_info "Загружаем конфигурацию из $CONFIG_FILE"
+    # shellcheck source=/dev/null
+    . "$CONFIG_FILE"
+}
+
+# ============================================================================
+# Функции проверки системы
+# ============================================================================
+check_system() {
+    log_info "=== Проверка системы ==="
+    
+    # Проверка модели устройства
+    if [ -f /tmp/sysinfo/model ]; then
+        MODEL=$(cat /tmp/sysinfo/model)
+        log_info "Модель устройства: $MODEL"
+    else
+        MODEL="Unknown"
+        log_warn "Не удалось определить модель устройства"
+    fi
+    
+    # Проверка версии OpenWrt
+    if [ -f /etc/os-release ]; then
+        # shellcheck source=/etc/os-release
+        . /etc/os-release
+        log_info "Версия OpenWrt: $OPENWRT_RELEASE"
+        
+        VERSION=$(grep 'VERSION=' /etc/os-release | cut -d'"' -f2)
+        VERSION_ID=$(echo "$VERSION" | awk -F. '{print $1}')
+        export VERSION_ID
+        
+        # Проверка совместимости
+        if [ "$VERSION_ID" -lt 19 ]; then
+            log_warn "Версия OpenWrt ($VERSION_ID) может быть несовместима"
+        fi
+    else
+        VERSION_ID=0
+        log_warn "Не удалось определить версию OpenWrt"
+    fi
+    
+    # Проверка свободного места
+    check_disk_space
+    
+    # Проверка интернета
+    check_internet
+    
+    # Проверка синхронизации времени
+    check_time_sync
+}
+
+check_disk_space() {
+    local free_space
+    free_space=$(df /overlay | awk 'NR==2 {print $4}')
+    local free_space_mb=$((free_space / 1024))
+    
+    log_info "Свободное место на overlay: ${free_space_mb}MB"
+    
+    if [ "$free_space_mb" -lt 10 ]; then
+        log_error "Недостаточно свободного места (<10MB). Требуется минимум 20MB"
+        exit 1
+    elif [ "$free_space_mb" -lt 20 ]; then
+        log_warn "Мало свободного места (<20MB). Установка может не завершиться успешно"
+        if [ $AUTO_MODE -eq 0 ]; then
+            echo -n "Продолжить? (y/N): " >&3
+            read -r answer
+            if [ "$answer" != "y" ] && [ "$answer" != "Y" ]; then
+                exit 1
+            fi
+        fi
+    fi
+}
+
+check_internet() {
+    log_info "Проверка подключения к интернету..."
+    
+    local test_hosts="openwrt.org google.com cloudflare.com"
+    local connected=0
+    
+    for host in $test_hosts; do
+        if ping -c 1 -W 3 "$host" >/dev/null 2>&1; then
+            log_info "Подключение к $host успешно"
+            connected=1
+            break
+        fi
+    done
+    
+    if [ $connected -eq 0 ]; then
+        log_error "Нет подключения к интернету"
+        return 1
+    fi
+    
+    return 0
+}
+
+check_time_sync() {
+    log_info "Проверка синхронизации времени..."
+    
+    local current_year
+    current_year=$(date +%Y)
+    
+    if [ "$current_year" -lt 2023 ]; then
+        log_warn "Время не синхронизировано: $(date)"
+        
+        if [ $AUTO_MODE -eq 1 ]; then
+            log_info "Автоматическая синхронизация времени..."
+            for ntp_server in $NTP_SERVERS; do
+                if ntpd -n -q -p "$ntp_server" >/dev/null 2>&1; then
+                    log_success "Время синхронизировано с $ntp_server"
+                    break
+                fi
+            done
+        else
+            echo -n "Синхронизировать время? (Y/n): " >&3
+            read -r answer
+            if [ "$answer" != "n" ] && [ "$answer" != "N" ]; then
+                for ntp_server in $NTP_SERVERS; do
+                    if ntpd -n -q -p "$ntp_server" >/dev/null 2>&1; then
+                        log_success "Время синхронизировано с $ntp_server"
+                        break
+                    fi
+                done
+            fi
+        fi
+    else
+        log_info "Время синхронизировано: $(date)"
+    fi
+}
+
+# ============================================================================
+# Функции работы с opkg
+# ============================================================================
+configure_opkg() {
+    log_info "Настройка opkg..."
+    
+    # Сохранение списков пакетов на extroot
+    if grep -q "^lists_dir\s*ext\s*/usr/lib/opkg/lists" /etc/opkg.conf 2>/dev/null; then
+        log_info "Конфигурация opkg уже настроена"
+    else
+        sed -i -r -e "s/^(lists_dir\sext\s).*/\1\/usr\/lib\/opkg\/lists/" /etc/opkg.conf
+        log_success "Конфигурация opkg обновлена"
+    fi
+}
+
+update_opkg() {
+    log_info "Обновление списков пакетов..."
+
+    local retry=0
+    while [ $retry -lt $RETRY_COUNT ]; do
+        if opkg update > /tmp/opkg_update.log 2>&1; then
+            log_success "Списки пакетов успешно обновлены"
+            cat /tmp/opkg_update.log >> "$LOG_FILE"
+            rm -f /tmp/opkg_update.log
+            return 0
+        else
+            retry=$((retry + 1))
+            log_warn "Попытка $retry из $RETRY_COUNT не удалась"
+            sleep 5
+        fi
+    done
+    
+    log_error "Не удалось обновить списки пакетов после $RETRY_COUNT попыток"
+    cat /tmp/opkg_update.log >> "$LOG_FILE"
+    rm -f /tmp/opkg_update.log
+    return 1
+}
+
+install_package() {
+    local pkg=$1
+    local retry=0
+    
+    if opkg list-installed | grep -q "^$pkg "; then
+        log_info "Пакет $pkg уже установлен"
+        return 0
+    fi
+    
+    log_info "Установка пакета: $pkg"
+    
+    while [ $retry -lt $RETRY_COUNT ]; do
+        if opkg install "$pkg" > /tmp/opkg_install.log 2>&1; then
+            cat /tmp/opkg_install.log >> "$LOG_FILE"
+            log_success "Пакет $pkg успешно установлен"
+            rm -f /tmp/opkg_install.log
+            return 0
+        else
+            retry=$((retry + 1))
+            log_warn "Попытка $retry из $RETRY_COUNT установки $pkg не удалась"
+            sleep 5
+        fi
+    done
+    
+    log_error "Не удалось установить пакет $pkg после $RETRY_COUNT попыток"
+    cat /tmp/opkg_install.log >> "$LOG_FILE"
+    rm -f /tmp/opkg_install.log
+    
+    if [ $AUTO_MODE -eq 0 ]; then
+        echo -n "Продолжить выполнение? (y/N): " >&3
+        read -r answer
+        if [ "$answer" != "y" ] && [ "$answer" != "Y" ]; then
+            exit 1
+        fi
+    fi
+    
+    return 1
+}
+
+replace_package() {
+    local old_pkg=$1
+    local new_pkg=$2
+    
+    log_info "Замена пакета $old_pkg на $new_pkg..."
+    
+    if ! opkg list-installed | grep -q "^$old_pkg "; then
+        log_info "Пакет $old_pkg не установлен"
+    fi
+    
+    if opkg list-installed | grep -q "^$new_pkg "; then
+        log_info "Пакет $new_pkg уже установлен"
+        return 0
+    fi
+    
+    # Создаем временную директорию для кэша
+    local tmp_dir="/tmp"
+    
+    # Скачиваем новый пакет
+    if ! opkg download "$new_pkg" --cache /tmp > /tmp/opkg_download.log 2>&1; then
+        log_error "Не удалось скачать пакет $new_pkg"
+        cat /tmp/opkg_download.log >> "$LOG_FILE"
+        rm -rf /tmp/opkg_download.log
+        return 1
+    fi
+    
+    # Удаляем старый пакет
+    if opkg list-installed | grep -q "^$old_pkg "; then
+        log_info "Удаление пакета $old_pkg..."
+        if ! opkg remove "$old_pkg" --force-depends > /tmp/opkg_remove.log 2>&1; then
+            log_warn "Проблемы при удалении $old_pkg"
+            cat /tmp/opkg_remove.log >> "$LOG_FILE"
+        fi
+        rm -f /tmp/opkg_remove.log
+    fi
+    
+    # Устанавливаем новый пакет
+    if opkg install "$new_pkg" --cache /tmp > /tmp/opkg_install.log 2>&1; then
+        cat /tmp/opkg_install.log >> "$LOG_FILE"
+        log_success "Пакет $new_pkg успешно установлен"
+        rm -rf /tmp/opkg_install.log /tmp/opkg_download.log
+        return 0
+    else
+        log_error "Не удалось установить пакет $new_pkg"
+        cat /tmp/opkg_install.log >> "$LOG_FILE"
+        rm -rf /tmp/opkg_install.log /tmp/opkg_download.log
+        return 1
+    fi
+}
+
+# ============================================================================
+# Функции настройки системы
+# ============================================================================
+setup_firewall_rules() {
+    log_info "Настройка правил firewall..."
+    
+    # Правило для IGMP
+    if uci show firewall | grep -q "\.name='Allow-IGMP'"; then
+        log_info "Правило 'Allow-IGMP' уже существует"
+    else
+        log_info "Добавление правила 'Allow-IGMP'"
+        uci add firewall rule
+        uci set firewall.@rule[-1]=rule
+        uci set firewall.@rule[-1].name='Allow-IGMP'
+        uci set firewall.@rule[-1].src='wan'
+        uci set firewall.@rule[-1].proto='igmp'
+        uci set firewall.@rule[-1].target='ACCEPT'
+        uci commit firewall
+        log_success "Правило 'Allow-IGMP' добавлено"
+    fi
+    
+    # Правило для IGMPPROXY
+    if uci show firewall | grep -q "\.name='Allow-IPTV-IGMPPROXY'"; then
+        log_info "Правило 'Allow-IPTV-IGMPPROXY' уже существует"
+    else
+        log_info "Добавление правила 'Allow-IPTV-IGMPPROXY'"
+        uci add firewall rule
+        uci set firewall.@rule[-1]=rule
+        uci set firewall.@rule[-1].name='Allow-IPTV-IGMPPROXY'
+        uci set firewall.@rule[-1].src='wan'
+        uci set firewall.@rule[-1].dest='lan'
+        uci set firewall.@rule[-1].dest_ip='224.0.0.0/4'
+        uci set firewall.@rule[-1].proto='udp'
+        uci set firewall.@rule[-1].target='ACCEPT'
+        uci commit firewall
+        log_success "Правило 'Allow-IPTV-IGMPPROXY' добавлено"
+    fi
+    
+    # Перезапуск firewall если были изменения
+    if [ -n "$(uci changes firewall)" ]; then
+        log_info "Применение изменений firewall..."
+        /etc/init.d/firewall reload 2>&1 | tee -a "$LOG_FILE"
+        log_success "Firewall перезагружен"
+    fi
+}
+
+backup_configs() {
+    local backup_dir="${LOG_DIR}/backups/$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$backup_dir"
+    
+    log_info "Создание резервной копии конфигурации в $backup_dir"
+    
+    # Резервное копирование важных конфигов
+    if [ -f /etc/config/dhcp ]; then
+        cp /etc/config/dhcp "$backup_dir/dhcp.bak"
+    fi
+    
+    if [ -f /etc/config/firewall ]; then
+        cp /etc/config/firewall "$backup_dir/firewall.bak"
+    fi
+    
+    if [ -f /etc/opkg.conf ]; then
+        cp /etc/opkg.conf "$backup_dir/opkg.conf.bak"
+    fi
+    
+    # Сохраняем список установленных пакетов
+    opkg list-installed | sort > "${backup_dir}/packages.list"
+    
+    log_success "Резервная копия создана"
+}
+
+generate_report() {
+    local report_file="${LOG_DIR}/report_$(date +%Y%m%d_%H%M%S).txt"
+    
+    {
+        echo "================================================================================"
+        echo "ОТЧЕТ ОБ УСТАНОВКЕ"
+        echo "================================================================================"
+        echo "Дата и время: $(date)"
+        echo "Скрипт: $SCRIPT_NAME"
+        echo "Лог-файл: $LOG_FILE"
+        echo ""
+        echo "СИСТЕМНАЯ ИНФОРМАЦИЯ:"
+        echo "  Модель: $MODEL"
+        echo "  Версия: $OPENWRT_RELEASE"
+        echo "  Свободное место: $(df -h /overlay | awk 'NR==2 {print $4}')"
+        echo ""
+        echo "УСТАНОВЛЕННЫЕ ПАКЕТЫ:"
+        for pkg in $REQUIRED_PACKAGES; do
+            if opkg list-installed | grep -q "^$pkg "; then
+                echo "  [OK] $pkg"
+            else
+                echo "  [FAIL] $pkg"
+            fi
+        done
+        echo ""
+        echo "ПРАВИЛА FIREWALL:"
+        if uci show firewall | grep -q "Allow-IGMP"; then
+            echo "  [OK] Allow-IGMP"
+        else
+            echo "  [FAIL] Allow-IGMP"
+        fi
+        if uci show firewall | grep -q "Allow-IPTV-IGMPPROXY"; then
+            echo "  [OK] Allow-IPTV-IGMPPROXY"
+        else
+            echo "  [FAIL] Allow-IPTV-IGMPPROXY"
+        fi
+        echo "================================================================================"
+    } > "$report_file"
+    
+    log_info "Отчет сохранен в $report_file"
+}
+
+# ============================================================================
+# Основная функция
+# ============================================================================
+main() {
+    # Инициализация
+    check_root
+    check_single_instance
+    init_logging
+    
+    log_info "=== НАЧАЛО УСТАНОВКИ ==="
+    log_info "PID: $$"
+    
+    # Загрузка конфигурации
+    load_config
+    
+    # Резервное копирование
+    backup_configs
+    
+    # Проверка системы
+    if ! check_system; then
+        log_error "Проверка системы не пройдена"
+        exit 1
+    fi
+    
+    # Настройка opkg
+    configure_opkg
+    
+    # Обновление списков пакетов
+    if ! update_opkg; then
+        log_error "Не удалось обновить списки пакетов"
+        exit 1
+    fi
+    
+    # Установка  пакетов
+    log_info "=== УСТАНОВКА ПАКЕТОВ ==="
+    log_info "пакеты - $REQUIRED_PACKAGES "
+    for pkg in $REQUIRED_PACKAGES; do
+        install_package "$pkg"
+    done
+    
+    # Замена пакетов
+    log_info "=== ЗАМЕНА ПАКЕТОВ ==="
+    
+    for replace_pair in $REPLACE_PACKAGES; do
+        old_pkg=$(echo "$replace_pair" | cut -d: -f1)
+        new_pkg=$(echo "$replace_pair" | cut -d: -f2)
+        replace_package "$old_pkg" "$new_pkg"
+    done
+    
+    # Настройка IPTV
+    log_info "=== НАСТРОЙКА IPTV ==="
+    setup_firewall_rules
+    
+    # Создание отчета
+    generate_report
+    
+    log_success "=== УСТАНОВКА УСПЕШНО ЗАВЕРШЕНА ==="
+    log_info "Полный лог доступен в: $LOG_FILE"
+    echo "[INFO] $(date '+%Y-%m-%d %H:%M:%S') - setup_required.sh завершил работу" >> /root/postboot.log
+    
+    # Удаляем сам скрипт
+    rm -f /root/setup_required.sh
+    log_warn "Скрипт setup_required удален"
+
+    if [ $AUTO_MODE -eq 0 ]; then
+        echo -n "Перезагрузить систему сейчас? (y/N): " >&3
+        read -r answer
+        if [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then
+            log_info "Перезагрузка системы..."
+            reboot
+        fi
+    fi
+}
+
+# Запуск основной функции
+main "$@"
