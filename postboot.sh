@@ -8,9 +8,6 @@ PID_FILE="/var/run/${SCRIPT_NAME}.pid"
 LOCK_FILE="/var/lock/${SCRIPT_NAME}.lock"
 RETRY_COUNT=5
 
-CONFIG_FILE="${SCRIPT_DIR}/outline.conf"
-LOG="/root/postboot.log"
-
 if [ ! -f "/root/logging_functions.sh" ]; then
     cd /root && wget https://raw.githubusercontent.com/arhitru/fuctions_bash/refs/heads/main/logging_functions.sh >> $LOG_FILE 2>&1 && chmod +x /root/logging_functions.sh
 fi
