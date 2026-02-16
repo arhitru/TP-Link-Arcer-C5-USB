@@ -1,4 +1,22 @@
 #!/bin/sh
+config_mount_usb()(
+    SCRIPT_NAME=$(basename "$0")
+    SCRIPT_DIR=$(dirname "$0")
+    LOG_DIR="/root"
+    LOG_FILE="${LOG_DIR}/mount_usb.log"
+    PID_FILE="/var/run/${SCRIPT_NAME}.pid"
+    LOCK_FILE="/var/lock/${SCRIPT_NAME}.lock"
+    RETRY_COUNT=5
+
+    if [ ! -f "/root/logging_functions.sh" ]; then
+        cd /root && wget https://raw.githubusercontent.com/arhitru/fuctions_bash/refs/heads/main/logging_functions.sh >> $LOG_FILE 2>&1 && chmod +x /root/logging_functions.sh
+    fi
+    . /root/logging_functions.sh
+    init_logging
+
+    LOG="/root/mount_usb.log"
+    log_info "=== Начало установки: $(date) ===" > $LOG
+)
 
 # Функция для обработки ошибок
 error_exit() {
@@ -739,24 +757,7 @@ copy_to_extroot() {
 }
 
 # Основной код
-main() {
-    SCRIPT_NAME=$(basename "$0")
-    SCRIPT_DIR=$(dirname "$0")
-    LOG_DIR="/root"
-    LOG_FILE="${LOG_DIR}/mount_usb.log"
-    PID_FILE="/var/run/${SCRIPT_NAME}.pid"
-    LOCK_FILE="/var/lock/${SCRIPT_NAME}.lock"
-    RETRY_COUNT=5
-
-    if [ ! -f "/root/logging_functions.sh" ]; then
-        cd /root && wget https://raw.githubusercontent.com/arhitru/fuctions_bash/refs/heads/main/logging_functions.sh >> $LOG_FILE 2>&1 && chmod +x /root/logging_functions.sh
-    fi
-    . /root/logging_functions.sh
-    init_logging
-
-    LOG="/root/mount_usb.log"
-    log_info "=== Начало установки: $(date) ===" > $LOG
-
+main_mount_usb() {
     DISK="/dev/sda"
 
     # Проверяем существование диска
@@ -846,6 +847,7 @@ main() {
             # Автоматический режим для скриптов
             if [ -t 0 ]; then
                 # Интерактивный режим (если есть терминал)
+                log_warn "Переразметить диск? (Все данные будут удалены!) [y/N]: "
                 read -p "Переразметить диск? (Все данные будут удалены!) [y/N]: " CONFIRM
                 
                 if [ "$CONFIRM" = "y" ] || [ "$CONFIRM" = "Y" ]; then
@@ -902,6 +904,7 @@ main() {
         log_info "Изменения применены без переразметки."
         log_info "Для полного применения изменений в extroot может потребоваться перезагрузка."
         if [ -t 0 ]; then
+            log_info "Перезагрузить сейчас? [y/N]: "
             read -p "Перезагрузить сейчас? [y/N]: " REBOOT_NOW
             if [ "$REBOOT_NOW" = "y" ] || [ "$REBOOT_NOW" = "Y" ]; then
                 log_info "Перезагружаюсь..."
@@ -916,4 +919,28 @@ main() {
 }
 
 # Запускаем основной код
-main
+case "$0" in
+    *mount_usb.sh|*sh)
+        SCRIPT_NAME=$(basename "$0")
+        SCRIPT_DIR=$(dirname "$0")
+        LOG_DIR="/root"
+        LOG_FILE="${LOG_DIR}/mount_usb.log"
+        PID_FILE="/var/run/${SCRIPT_NAME}.pid"
+        LOCK_FILE="/var/lock/${SCRIPT_NAME}.lock"
+        RETRY_COUNT=5
+
+        if [ ! -f "/root/logging_functions.sh" ]; then
+            cd /root && wget https://raw.githubusercontent.com/arhitru/fuctions_bash/refs/heads/main/logging_functions.sh >> $LOG_FILE 2>&1 && chmod +x /root/logging_functions.sh
+        fi
+        . /root/logging_functions.sh
+        init_logging
+
+        LOG="/root/mount_usb.log"
+        log_info "=== Начало установки: $(date) ===" > $LOG
+        main_mount_usb
+        ;;
+    *)
+        # Скрипт импортирован через source
+        return 0 2>/dev/null || true
+        ;;
+esac
