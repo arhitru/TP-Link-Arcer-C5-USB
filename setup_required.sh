@@ -545,7 +545,7 @@ main() {
     
     # Установка  пакетов
     log_info "=== УСТАНОВКА ПАКЕТОВ ==="
-     echo "пакеты - $REQUIRED_PACKAGES "
+    log_info "пакеты - $REQUIRED_PACKAGES "
     for pkg in $REQUIRED_PACKAGES; do
         install_package "$pkg"
     done
