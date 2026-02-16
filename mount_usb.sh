@@ -1,13 +1,27 @@
 #!/bin/sh
 
+SCRIPT_NAME=$(basename "$0")
+SCRIPT_DIR=$(dirname "$0")
+LOG_DIR="/root"
+LOG_FILE="${LOG_DIR}/mount_usb.log"
+PID_FILE="/var/run/${SCRIPT_NAME}.pid"
+LOCK_FILE="/var/lock/${SCRIPT_NAME}.lock"
+RETRY_COUNT=5
+
+if [ ! -f "/root/logging_functions.sh" ]; then
+    cd /root && wget https://raw.githubusercontent.com/arhitru/fuctions_bash/refs/heads/main/logging_functions.sh >> $LOG_FILE 2>&1 && chmod +x /root/logging_functions.sh
+fi
+. /root/logging_functions.sh
+init_logging
+
 LOG="/root/mount_usb.log"
-echo "=== Начало установки: $(date) ===" > $LOG
+log_info "=== Начало установки: $(date) ===" > $LOG
 
 DISK="/dev/sda"
 
 # Функция для обработки ошибок
 error_exit() {
-    echo "Ошибка: $1"  | tee -a $LOG >&2
+    log_error "Ошибка: $1"  | tee -a $LOG >&2
     exit 1
 }
 
@@ -15,26 +29,26 @@ error_exit() {
 force_reload_partitions() {
     local disk="$1"
     
-    echo "Принудительно перезагружаю таблицу разделов $disk..." | tee -a $LOG
+    log_info "Принудительно перезагружаю таблицу разделов $disk..."
     
     # 1. Пробуем hdparm
     if command -v hdparm >/dev/null 2>&1; then
-        hdparm -z "$disk" 2>/dev/null && echo "  ✅ hdparm -z выполнен" | tee -a $LOG
+        hdparm -z "$disk" 2>/dev/null && log_info "  ✅ hdparm -z выполнен"
     fi
     
     # 2. Пробуем blockdev
     if command -v blockdev >/dev/null 2>&1; then
-        blockdev --rereadpt "$disk" 2>/dev/null && echo "  ✅ blockdev --rereadpt выполнен" | tee -a $LOG
+        blockdev --rereadpt "$disk" 2>/dev/null && log_info "  ✅ blockdev --rereadpt выполнен"
     fi
     
     # 3. Пробуем partprobe
     if command -v partprobe >/dev/null 2>&1; then
-        partprobe "$disk" 2>/dev/null && echo "  ✅ partprobe выполнен" | tee -a $LOG
+        partprobe "$disk" 2>/dev/null && log_info "  ✅ partprobe выполнен"
     fi
     
     # 4. Пробуем через /sys
     if [ -f "/sys/block/${disk##*/}/device/rescan" ]; then
-        echo 1 > "/sys/block/${disk##*/}/device/rescan" 2>/dev/null && echo "  ✅ sysfs rescan выполнен" | tee -a $LOG
+        echo 1 > "/sys/block/${disk##*/}/device/rescan" 2>/dev/null && log_info "  ✅ sysfs rescan выполнен"
     fi
     
     sleep 2
@@ -53,13 +67,13 @@ unmount_disk_partitions() {
     # uci -q delete fstab.extra
     # uci commit fstab
     
-    echo "Проверка смонтированных разделов на $disk..." | tee -a $LOG
+    log_info "Проверка смонтированных разделов на $disk..."
     
     # Сначала отключаем swap на всех разделах диска
     for part in ${disk}*; do
         if [ -b "$part" ] && [ "$part" != "$disk" ]; then
             if swapon -s 2>/dev/null | grep -q "^$part "; then
-                echo "  Отключение swap на $part..." | tee -a $LOG
+                log_info "  Отключение swap на $part..."
                 swapoff "$part" 2>/dev/null
                 sleep 1
             fi
@@ -68,7 +82,7 @@ unmount_disk_partitions() {
     
     # Многократные попытки размонтирования
     while [ $attempt -le $max_attempts ]; do
-        echo "Попытка размонтирования #$attempt..." | tee -a $LOG
+        log_info "Попытка размонтирования #$attempt..."
         local unmounted=0
         
         for part in ${disk}*; do
@@ -76,7 +90,7 @@ unmount_disk_partitions() {
                 # Проверяем, смонтирован ли раздел
                 if mount | grep -q "^$part "; then
                     mounted_parts=$((mounted_parts + 1))
-                    echo "  Размонтирование $part..." | tee -a $LOG
+                    log_info "  Размонтирование $part..."
                     
                     # Пытаемся размонтировать всеми способами
                     umount -f "$part" 2>/dev/null || \
@@ -85,9 +99,9 @@ unmount_disk_partitions() {
                     
                     # Проверяем результат
                     if mount | grep -q "^$part "; then
-                        echo "  ⚠️  Не удалось размонтировать $part" | tee -a $LOG
+                        log_info "  ⚠️  Не удалось размонтировать $part"
                     else
-                        echo "  ✅ $part размонтирован" | tee -a $LOG
+                        log_info "  ✅ $part размонтирован"
                         unmounted=$((unmounted + 1))
                     fi
                 fi
@@ -95,7 +109,7 @@ unmount_disk_partitions() {
         done
         
         if [ $unmounted -eq 0 ]; then
-            echo "  Нет смонтированных разделов" | tee -a $LOG
+            log_info "  Нет смонтированных разделов"
             break
         fi
         
@@ -109,16 +123,16 @@ unmount_disk_partitions() {
         if [ -b "$part" ] && [ "$part" != "$disk" ]; then
             if mount | grep -q "^$part "; then
                 remaining=$((remaining + 1))
-                echo "  ❌ Раздел $part всё ещё смонтирован" | tee -a $LOG
+                log_info "  ❌ Раздел $part всё ещё смонтирован"
             fi
         fi
     done
     
     if [ $remaining -gt 0 ]; then
-        echo "  ⚠️  Осталось $remaining смонтированных разделов" | tee -a $LOG
+        log_info "  ⚠️  Осталось $remaining смонтированных разделов"
         return 1
     else
-        echo "  ✅ Все разделы размонтированы" | tee -a $LOG
+        log_info "  ✅ Все разделы размонтированы"
         return 0
     fi
 }
@@ -127,12 +141,12 @@ unmount_disk_partitions() {
 stop_disk_usage() {
     local disk="$1"
     
-    echo "Останавливаю все процессы, использующие $disk..." | tee -a $LOG
+    log_info "Останавливаю все процессы, использующие $disk..."
     
     # Находим все процессы, которые используют диск
     if command -v lsof >/dev/null 2>&1; then
         lsof "$disk"* 2>/dev/null | tail -n +2 | awk '{print $2}' | sort -u | while read pid; do
-            echo "  Завершение процесса PID: $pid" | tee -a $LOG
+            log_info "  Завершение процесса PID: $pid"
             kill -9 "$pid" 2>/dev/null
         done
     fi
@@ -155,14 +169,14 @@ get_disk_size() {
     elif [ -f "/sys/block/${disk##*/}/size" ]; then
         local sectors=$(cat "/sys/block/${disk##*/}/size" 2>/dev/null)
         if [ -n "$sectors" ]; then
-            echo $((sectors * 512))
+            log_info $((sectors * 512))
         else
-            echo ""
+            log_info ""
         fi
     elif command -v fdisk >/dev/null 2>&1; then
         fdisk -l "$disk" 2>/dev/null | grep -E "^Disk ${disk}:" | awk '{print $5}'
     else
-        echo ""
+        log_info ""
     fi
 }
 
@@ -177,26 +191,26 @@ count_existing_partitions() {
         fi
     done
     
-    echo "$count" | tee -a $LOG
+    log_info "$count"
 }
 
 # Функция для быстрой проверки (основная)
 quick_check() {
     local disk="$1"
     
-    echo "Быстрая проверка разметки..." | tee -a $LOG
+    log_info "Быстрая проверка разметки..."
     
     # Проверяем наличие parted
     if ! command -v parted >/dev/null 2>&1; then
-        echo "  ⚠️ Утилита parted не найдена" | tee -a $LOG
-        echo "false" | tee -a $LOG
+        log_info "  ⚠️ Утилита parted не найдена"
+        log_info "false"
         return
     fi
     
     # Проверяем наличие GPT
     if ! parted -s "$disk" print 2>/dev/null | grep -q "Partition Table:.*gpt"; then
-        echo "  ❌ Таблица разделов не GPT" | tee -a $LOG
-        echo "false" | tee -a $LOG
+        log_info "  ❌ Таблица разделов не GPT"
+        log_info "false"
         return
     fi
     
@@ -204,8 +218,8 @@ quick_check() {
     local partitions=$(parted -s "$disk" print 2>/dev/null | awk 'NR > 7 && /^ [0-9]/ {print $1 " " $6 " " $5}')
     
     if [ -z "$partitions" ]; then
-        echo "  Диск не размечен" | tee -a $LOG
-        echo "0" | tee -a $LOG
+        log_info "  Диск не размечен"
+        log_info "0"
         return
     fi
     
@@ -215,47 +229,47 @@ quick_check() {
     # Используем файл для накопления результатов
     local result_file=$(mktemp /tmp/partcheck.XXXXXX)
     
-    echo "$partitions" | while read -r num name fstype; do
+    log_info "$partitions" | while read -r num name fstype; do
         if [ "$num" -ge 1 ] && [ "$num" -le 4 ]; then
             case "$num" in
                 1)
                     if [ "$name" = "extroot" ] && echo "$fstype" | grep -q "ext4"; then
-                        echo "  ✅ Раздел 1: $name ($fstype) - корректный" | tee -a $LOG
-                        echo "1" >> "$result_file"
+                        log_info "  ✅ Раздел 1: $name ($fstype) - корректный"
+                        log_info "1" >> "$result_file"
                     else
-                        echo "  ❌ Раздел 1: $name ($fstype) - ожидается: extroot, ext4" | tee -a $LOG
+                        log_error "  ❌ Раздел 1: $name ($fstype) - ожидается: extroot, ext4"
                     fi
                     ;;
                 2)
                     if [ "$name" = "swap" ] && echo "$fstype" | grep -q -E "swap|linux-swap"; then
-                        echo "  ✅ Раздел 2: $name ($fstype) - корректный" | tee -a $LOG
-                        echo "1" >> "$result_file"
+                        log_info "  ✅ Раздел 2: $name ($fstype) - корректный"
+                        log_info "1" >> "$result_file"
                     else
-                        echo "  ❌ Раздел 2: $name ($fstype) - ожидается: swap, swap" | tee -a $LOG
+                        log_error "  ❌ Раздел 2: $name ($fstype) - ожидается: swap, swap"
                     fi
                     ;;
                 3)
                     if [ "$name" = "data" ] && echo "$fstype" | grep -q "ext4"; then
-                        echo "  ✅ Раздел 3: $name ($fstype) - корректный" | tee -a $LOG
-                        echo "1" >> "$result_file"
+                        log_info "  ✅ Раздел 3: $name ($fstype) - корректный"
+                        log_info "1" >> "$result_file"
                     elif [ "$name" = "extra" ] && echo "$fstype" | grep -q "ext4"; then
-                        echo "  ✅ Раздел 3: $name ($fstype) - корректный" | tee -a $LOG
-                        echo "1" >> "$result_file"
+                        log_info "  ✅ Раздел 3: $name ($fstype) - корректный"
+                        log_info "1" >> "$result_file"
                     else
-                        echo "  ❌ Раздел 3: $name ($fstype) - ожидается: data или extra, ext4" | tee -a $LOG
+                        log_error "  ❌ Раздел 3: $name ($fstype) - ожидается: data или extra, ext4"
                     fi
                     ;;
                 4)
                     if [ "$name" = "extra" ] && echo "$fstype" | grep -q "ext4"; then
-                        echo "  ✅ Раздел 4: $name ($fstype) - корректный" | tee -a $LOG
-                        echo "1" >> "$result_file"
+                        log_info "  ✅ Раздел 4: $name ($fstype) - корректный"
+                        log_info "1" >> "$result_file"
                     else
-                        echo "  ❌ Раздел 4: $name ($fstype) - ожидается: extra, ext4" | tee -a $LOG
+                        log_error "  ❌ Раздел 4: $name ($fstype) - ожидается: extra, ext4"
                     fi
                     ;;
             esac
         else
-            echo "  ⚠️  Раздел $num: пропускается (поддерживаются только разделы 1-4)" | tee -a $LOG
+            log_warn "  ⚠️  Раздел $num: пропускается (поддерживаются только разделы 1-4)"
         fi
     done
     
@@ -279,14 +293,14 @@ quick_check() {
     fi
     
     if [ "$valid_count" -eq 0 ]; then
-        echo "  ❌ Не найдено корректных разделов" | tee -a $LOG
-        echo "false" | tee -a $LOG
+        log_error "  ❌ Не найдено корректных разделов"
+        log_error "false"
     elif [ "$continuous" = "false" ]; then
-        echo "  ⚠️  Нарушена последовательность разделов" | tee -a $LOG
-        echo "$valid_count" | tee -a $LOG
+        log_warn "  ⚠️  Нарушена последовательность разделов"
+        log_warn "$valid_count"
     else
-        echo "  ✅ Найдено $valid_count корректных разделов" | tee -a $LOG
-        echo "$valid_count" | tee -a $LOG
+        log_info "  ✅ Найдено $valid_count корректных разделов"
+        log_info "$valid_count"
     fi
 }
 
@@ -294,13 +308,13 @@ quick_check() {
 auto_detect_layout() {
     local disk="$1"
     
-    echo "Автоматическое определение конфигурации диска..." | tee -a $LOG
+    log_info "Автоматическое определение конфигурации диска..."
     
     # Получаем информацию из parted
     if ! command -v parted >/dev/null 2>&1; then
-        echo "  ⚠️ Parted не найден, использую простой подсчет" | tee -a $LOG
+        echo "  ⚠️ Parted не найден, использую простой подсчет"
         local count=$(count_existing_partitions "$disk")
-        echo "$count" | tee -a $LOG
+        log_info "$count"
         return
     fi
     
@@ -308,8 +322,8 @@ auto_detect_layout() {
     local gpt_check=$(echo "$parted_info" | grep -c "Partition Table:.*gpt")
     
     if [ "$gpt_check" -eq 0 ]; then
-        echo "  ❌ Таблица разделов не GPT" | tee -a $LOG
-        echo "false" | tee -a $LOG
+        log_error "  ❌ Таблица разделов не GPT"
+        log_error "false"
         return
     fi
     
@@ -317,8 +331,8 @@ auto_detect_layout() {
     local partitions=$(echo "$parted_info" | awk 'NR > 7 && /^ [0-9]/ {print $1 "|" $6 "|" $5}')
     
     if [ -z "$partitions" ]; then
-        echo "  Диск не размечен" | tee -a $LOG
-        echo "0" | tee -a $LOG
+        log_info "  Диск не размечен"
+        log_info "0"
         return
     fi
     
@@ -332,22 +346,22 @@ auto_detect_layout() {
         case "$num" in
             1)
                 if [ "$name" = "extroot" ] || echo "$fstype" | grep -q "ext4"; then
-                    echo "extroot" > "$part1_file"
+                    log_info "extroot" > "$part1_file"
                 fi
                 ;;
             2)
                 if [ "$name" = "swap" ] || echo "$fstype" | grep -q -E "swap|linux-swap"; then
-                    echo "swap" > "$part2_file"
+                    log_info "swap" > "$part2_file"
                 fi
                 ;;
             3)
                 if [ "$name" = "data" ] || [ "$name" = "extra" ] || echo "$fstype" | grep -q "ext4"; then
-                    echo "data" > "$part3_file"
+                    log_info "data" > "$part3_file"
                 fi
                 ;;
             4)
                 if [ "$name" = "extra" ] || echo "$fstype" | grep -q "ext4"; then
-                    echo "extra" > "$part4_file"
+                    log_info "extra" > "$part4_file"
                 fi
                 ;;
         esac
@@ -361,33 +375,33 @@ auto_detect_layout() {
     
     if [ -s "$part1_file" ]; then
         part_count=$((part_count + 1))
-        echo "  Раздел 1: $(cat "$part1_file")" | tee -a $LOG
+        log_info "  Раздел 1: $(cat "$part1_file")"
     fi
     
     if [ -s "$part2_file" ]; then
         part_count=$((part_count + 1))
-        echo "  Раздел 2: $(cat "$part2_file")" | tee -a $LOG
+        log_info "  Раздел 2: $(cat "$part2_file")"
     fi
     
     if [ -s "$part3_file" ]; then
         part_count=$((part_count + 1))
-        echo "  Раздел 3: $(cat "$part3_file")" | tee -a $LOG
+        log_info "  Раздел 3: $(cat "$part3_file")"
     fi
     
     if [ -s "$part4_file" ]; then
         part_count=$((part_count + 1))
-        echo "  Раздел 4: $(cat "$part4_file")" | tee -a $LOG
+        log_info "  Раздел 4: $(cat "$part4_file")"
     fi
     
     # Удаляем временные файлы
     rm -f "$part1_file" "$part2_file" "$part3_file" "$part4_file"
     
     if [ "$part_count" -eq 0 ]; then
-        echo "  ❌ Не удалось определить конфигурацию" | tee -a $LOG
-        echo "false" | tee -a $LOG
+        log_info "  ❌ Не удалось определить конфигурацию"
+        log_error "false"
     else
-        echo "  ✅ Обнаружена конфигурация с $part_count разделами" | tee -a $LOG
-        echo "$part_count" | tee -a $LOG
+        log_info "  ✅ Обнаружена конфигурация с $part_count разделами"
+        log_info "$part_count"
     fi
 }
 
@@ -395,7 +409,7 @@ auto_detect_layout() {
 create_new_partitions() {
     local disk="$1"
     
-    echo "Создаю новую разметку на диске $disk..." | tee -a $LOG
+    log_info "Создаю новую разметку на диске $disk..."
     
     # Получаем размер диска
     DISK_SIZE_BYTES=$(get_disk_size "$disk") || error_exit "Не удалось определить размер диска"
@@ -407,14 +421,14 @@ create_new_partitions() {
     # Конвертируем в гигабайты
     DISK_SIZE_GB=$((DISK_SIZE_BYTES / 1024 / 1024 / 1024))
     
-    echo "Размер диска: ${DISK_SIZE_GB}GB" | tee -a $LOG
+    log_info "Размер диска: ${DISK_SIZE_GB}GB"
     
     # Определяем количество разделов в зависимости от размера
     if [ "$DISK_SIZE_GB" -lt 1 ]; then
         error_exit "Диск слишком мал (меньше 1GB)"
     elif [ "$DISK_SIZE_GB" -lt 2 ]; then
         PART_COUNT=1
-        echo "Создаю 1 раздел (диск менее 2GB)" | tee -a $LOG
+        log_info "Создаю 1 раздел (диск менее 2GB)"
         
         # Сначала убеждаемся, что диск не используется
         force_reload_partitions "$disk"
@@ -429,7 +443,7 @@ create_new_partitions() {
         
     elif [ "$DISK_SIZE_GB" -lt 4 ]; then
         PART_COUNT=2
-        echo "Создаю 2 раздела (диск 2-3GB)" | tee -a $LOG
+        log_info "Создаю 2 раздела (диск 2-3GB)"
         
         force_reload_partitions "$disk"
         parted -s ${disk} mklabel gpt || error_exit "Ошибка создания GPT таблицы"
@@ -450,7 +464,7 @@ create_new_partitions() {
         
     elif [ "$DISK_SIZE_GB" -lt 64 ]; then
         PART_COUNT=3
-        echo "Создаю 3 раздела (диск 4-32GB)" | tee -a $LOG
+        log_info "Создаю 3 раздела (диск 4-32GB)"
         
         force_reload_partitions "$disk"
         parted -s ${disk} mklabel gpt || error_exit "Ошибка создания GPT таблицы"
@@ -476,7 +490,7 @@ create_new_partitions() {
         
     else
         PART_COUNT=4
-        echo "Создаю 4 раздела (диск 64GB и более)" | tee -a $LOG
+        log_info "Создаю 4 раздела (диск 64GB и более)"
         
         force_reload_partitions "$disk"
         parted -s ${disk} mklabel gpt || error_exit "Ошибка создания GPT таблицы"
@@ -508,22 +522,22 @@ create_new_partitions() {
         mkfs.ext4 -L "extra" ${disk}4 || error_exit "Ошибка создания файловой системы"
     fi
     
-    echo "$PART_COUNT" | tee -a $LOG
+    log_info "$PART_COUNT"
 }
 
 # Функция для удаления старых записей fstab (по UUID или пути)
 cleanup_old_fstab_entries() {
     local disk="$1"
     
-    echo "Очищаю старые записи fstab..." | tee -a $LOG
+    log_info "Очищаю старые записи fstab..."
     
     # Получаем UUID всех разделов на диске
     local uuids=""
-    echo "Поиск разделов на диске $disk:" | tee -a $LOG
+    log_info "Поиск разделов на диске $disk:"
     
     # Проверяем существование базового диска
     if [ ! -b "$disk" ]; then
-        echo "  Диск $disk не найден" | tee -a $LOG
+        log_error "  Диск $disk не найден"
         return
     fi
     
@@ -531,30 +545,30 @@ cleanup_old_fstab_entries() {
     for i in 1 2 3 4 5 6 7 8 9; do
         local partition="${disk}${i}"
         if [ -b "$partition" ]; then
-            echo "  Найден раздел: $partition" | tee -a $LOG
+            log_info "  Найден раздел: $partition"
             local uuid="$(block info ${DISK}${i} | grep -o -e 'UUID="\S*"')"
                         #$(blkid -s UUID -o value "$partition" 2>/dev/null)
             if [ -n "$uuid" ]; then
-                echo "    UUID: $uuid" | tee -a $LOG
+                log_info "    UUID: $uuid"
                 uuids="$uuids $uuid"
             else
-                echo "    UUID: не определен" | tee -a $LOG
+                log_warn "    UUID: не определен"
             fi
         fi
     done
     
-    echo "Список UUID для удаления: $uuids" | tee -a $LOG
+    log_info "Список UUID для удаления: $uuids"
     
     # Получаем все конфигурации fstab
     if ! uci show fstab >/dev/null 2>&1; then
-        echo "  Конфигурация fstab не найдена" | tee -a $LOG
+        log_info "  Конфигурация fstab не найдена"
         return
     fi
     
     # Ищем все записи mount и swap
     local configs=$(uci show fstab 2>/dev/null | grep -E "fstab\.(@mount\[|@swap\[|fstab\.[a-zA-Z])" | cut -d'=' -f1 | sed "s/'$//" | sort -u)
     
-    echo "Найдено записей в fstab: $(echo "$configs" | wc -l)" | tee -a $LOG
+    log_info "Найдено записей в fstab: $(echo "$configs" | wc -l)"
     
     for config in $configs; do
         # Получаем device или uuid записи
@@ -562,10 +576,10 @@ cleanup_old_fstab_entries() {
         local uuid=$(uci -q get "${config}.uuid" 2>/dev/null)
         local target=$(uci -q get "${config}.target" 2>/dev/null)
         
-        echo "  Проверяю запись $config:" | tee -a $LOG
-        echo "    device=$device" | tee -a $LOG
-        echo "    uuid=$uuid" | tee -a $LOG
-        echo "    target=$target" | tee -a $LOG
+        log_info "  Проверяю запись $config:"
+        log_info "    device=$device"
+        log_info "    uuid=$uuid"
+        log_info "    target=$target"
         
         # Проверяем, относится ли запись к нашему диску
         local remove=0
@@ -574,7 +588,7 @@ cleanup_old_fstab_entries() {
         if [ -n "$device" ]; then
             if echo "$device" | grep -q "^${disk}[0-9]*$"; then
                 remove=1
-                echo "    -> Удалить: совпадение по device" | tee -a $LOG
+                log_info "    -> Удалить: совпадение по device"
             fi
         fi
         
@@ -583,7 +597,7 @@ cleanup_old_fstab_entries() {
             for disk_uuid in $uuids; do
                 if [ "$uuid" = "$disk_uuid" ]; then
                     remove=1
-                    echo "    -> Удалить: совпадение по UUID $disk_uuid" | tee -a $LOG
+                    log_info "    -> Удалить: совпадение по UUID $disk_uuid"
                     break
                 fi
             done
@@ -594,7 +608,7 @@ cleanup_old_fstab_entries() {
             local disk_name=$(basename "$disk")  # "sda"
             if echo "$target" | grep -q "^/mnt/${disk_name}[0-9]*$"; then
                 remove=1
-                echo "    -> Удалить: совпадение по target" | tee -a $LOG
+                log_info "    -> Удалить: совпадение по target"
             fi
         fi
         
@@ -605,7 +619,7 @@ cleanup_old_fstab_entries() {
                 for disk_uuid in $uuids; do
                     if [ "$real_uuid" = "$disk_uuid" ]; then
                         remove=1
-                        echo "    -> Удалить: реальный UUID устройства совпадает" | tee -a $LOG
+                        log_info "    -> Удалить: реальный UUID устройства совпадает"
                         break
                     fi
                 done
@@ -615,14 +629,14 @@ cleanup_old_fstab_entries() {
         # Удаляем запись если нужно
         if [ "$remove" -eq 1 ]; then
             uci -q delete "$config"
-            echo "    УДАЛЕНО: $config" | tee -a $LOG
+            log_info "    УДАЛЕНО: $config"
         else
-            echo "    ОСТАВЛЕНО: не относится к диску $disk" | tee -a $LOG
+            log_info "    ОСТАВЛЕНО: не относится к диску $disk"
         fi
     done
     
     # Дополнительно: удаляем все записи с enabled="0" для нашего диска
-    echo "Проверка записей с enabled=0..." | tee -a $LOG
+    log_info "Проверка записей с enabled=0..."
     for config in $configs; do
         local enabled=$(uci -q get "${config}.enabled" 2>/dev/null)
         local device=$(uci -q get "${config}.device" 2>/dev/null)
@@ -640,7 +654,7 @@ cleanup_old_fstab_entries() {
             
             if [ "$should_delete" -eq 1 ]; then
                 uci -q delete "$config"
-                echo "  Удалена отключенная запись: $config" | tee -a $LOG
+                log_info "  Удалена отключенная запись: $config"
             fi
         fi
     done
@@ -651,7 +665,7 @@ cleanup_old_fstab_entries() {
     uci -q delete fstab.data
     uci -q delete fstab.extra
 
-    echo "Очистка завершена" | tee -a $LOG
+    log_info "Очистка завершена"
 }
 
 # Функция для настройки fstab
@@ -659,7 +673,7 @@ configure_fstab() {
     local disk="$1"
     local part_count="$2"
     
-    echo "Настраиваю fstab..." | tee -a $LOG
+    log_info "Настраиваю fstab..."
     
     # Очищаем старые записи перед созданием новых
     cleanup_old_fstab_entries "$disk"
@@ -673,7 +687,7 @@ configure_fstab() {
         uci set fstab.extroot.device="${disk}1"
         uci set fstab.extroot.target="${MOUNT}"
         uci set fstab.extroot.enabled="1"
-        echo "  Настроен extroot: ${disk}1" | tee -a $LOG
+        log_info "  Настроен extroot: ${disk}1"
     fi
     
     # Настраиваем swap если есть
@@ -681,7 +695,7 @@ configure_fstab() {
         uci set fstab.swap="swap"
         uci set fstab.swap.device="${disk}2"
         uci set fstab.swap.enabled="1"
-        echo "  Настроен swap: ${disk}2" | tee -a $LOG
+        log_info "  Настроен swap: ${disk}2"
     fi
     
     # Настраиваем data если есть
@@ -692,7 +706,7 @@ configure_fstab() {
         uci set fstab.data.enabled="1"
         
         mkdir -p /mnt/data
-        echo "  Настроен data: ${disk}3" | tee -a $LOG
+        log_info "  Настроен data: ${disk}3"
     fi
     
     # Настраиваем extra если есть
@@ -703,7 +717,7 @@ configure_fstab() {
         uci set fstab.extra.enabled="1"
         
         mkdir -p /mnt/extra
-        echo "  Настроен extra: ${disk}4" | tee -a $LOG
+        log_info "  Настроен extra: ${disk}4"
     fi
     
     # Сохраняем изменения
@@ -724,22 +738,22 @@ configure_fstab() {
 copy_to_extroot() {
     local disk="$1"
     
-    echo "Копирую данные в extroot..." | tee -a $LOG
+    log_info "Копирую данные в extroot..."
     
     if mount "${disk}1" /mnt 2>/dev/null; then
         if [ -d "${MOUNT}" ]; then
             tar -C "${MOUNT}" -cvf - . | tar -C /mnt -xf - 2>/dev/null
             if [ $? -eq 0 ]; then
-                echo "  Данные успешно скопированы" | tee -a $LOG
+                log_info "  Данные успешно скопированы"
             else
-                echo "  Предупреждение: возникли ошибки при копировании" | tee -a $LOG
+                log_info "  Предупреждение: возникли ошибки при копировании"
             fi
         else
-            echo "  Предупреждение: исходная точка монтирования не найдена" | tee -a $LOG
+            log_info "  Предупреждение: исходная точка монтирования не найдена"
         fi
         umount /mnt 2>/dev/null
     else
-        echo "  Предупреждение: не удалось смонтировать extroot для копирования данных" | tee -a $LOG
+        log_info "  Предупреждение: не удалось смонтировать extroot для копирования данных"
     fi
 }
 
@@ -748,48 +762,48 @@ main() {
     # Проверяем существование диска
     [ -b "$DISK" ] || error_exit "Диск $DISK не найден"
     
-    echo "=== Настройка диска $DISK ===" | tee -a $LOG
+    log_info "=== Настройка диска $DISK ==="
     
     # Сначала останавливаем все процессы, использующие диск
     stop_disk_usage "$DISK"
     
     # Затем размонтируем все разделы диска
     if ! unmount_disk_partitions "$DISK"; then
-        echo "⚠️  Предупреждение: не удалось размонтировать все разделы, продолжаем..." | tee -a $LOG
+        log_warn "⚠️  Предупреждение: не удалось размонтировать все разделы, продолжаем..."
     fi
     
     # Принудительно перезагружаем таблицу разделов
     force_reload_partitions "$DISK"
     
     # Сначала показываем текущую таблицу разделов
-    echo "Текущая таблица разделов:" | tee -a $LOG
+    log_info "Текущая таблица разделов:"
     if command -v parted >/dev/null 2>&1; then
-        parted -s "$DISK" print 2>/dev/null || echo "Не удалось отобразить таблицу разделов"
+        parted -s "$DISK" print 2>/dev/null || log_error "Не удалось отобразить таблицу разделов"
     else
-        echo "Утилита parted не найдена" | tee -a $LOG
+        log_error "Утилита parted не найдена"
     fi
-    echo "" | tee -a $LOG
+    log_info ""
     
     # Проверяем существующие разделы
     EXISTING_PARTS=$(count_existing_partitions "$DISK")
     
     if [ "$EXISTING_PARTS" -eq 0 ]; then
-        echo "Диск не размечен. Создаю новую разметку..." | tee -a $LOG
+        log_info "Диск не размечен. Создаю новую разметку..."
         PART_COUNT=$(create_new_partitions "$DISK")
         configure_fstab "$DISK" "$PART_COUNT"
         copy_to_extroot "$DISK"
         
     else
-        echo "На диске обнаружены разделы ($EXISTING_PARTS). Проверяю разметку..." | tee -a $LOG
+        log_info "На диске обнаружены разделы ($EXISTING_PARTS). Проверяю разметку..."
         
         # Используем быструю проверку
         CHECK_RESULT=$(quick_check "$DISK" | tail -n1)  # Берем последнюю строку
         
         if [ "$CHECK_RESULT" != "false" ] && [ -n "$CHECK_RESULT" ] && [ "$CHECK_RESULT" -gt 0 ]; then
             PART_COUNT="$CHECK_RESULT"
-            echo "" | tee -a $LOG
-            echo "✅ Существующая разметка корректна. Использую её." | tee -a $LOG
-            echo "Обнаружено $PART_COUNT корректных разделов" | tee -a $LOG
+            log_info ""
+            log_info "✅ Существующая разметка корректна. Использую её."
+            log_info "Обнаружено $PART_COUNT корректных разделов"
             
             configure_fstab "$DISK" "$PART_COUNT"
             
@@ -798,33 +812,33 @@ main() {
             OVERLAY_MOUNT=$(block info | grep 'MOUNT="[^"]*/overlay"' | cut -d'"' -f2)
             if [ -n "$OVERLAY_MOUNT" ] && [ -b "${DISK}1" ] && ! mountpoint -q "$OVERLAY_MOUNT" 2>/dev/null; then
                 MOUNT="$OVERLAY_MOUNT"
-                echo "Extroot еще не настроен. Копирую данные..." | tee -a $LOG
+                log_info "Extroot еще не настроен. Копирую данные..."
                 copy_to_extroot "$DISK"
             else
-                echo "Extroot уже настроен или точка монтирования не найдена. Пропускаю копирование данных." | tee -a $LOG
+                log_info "Extroot уже настроен или точка монтирования не найдена. Пропускаю копирование данных."
             fi
             
         else
-            echo "" | tee -a $LOG
-            echo "❌ Существующая разметка некорректна или неполная." | tee -a $LOG
+            log_info ""
+            log_error "❌ Существующая разметка некорректна или неполная."
             
             # Пробуем автоматическое определение как запасной вариант
             if [ "$CHECK_RESULT" = "false" ]; then
-                echo "Пробую автоматическое определение..." | tee -a $LOG
+                log_info "Пробую автоматическое определение..."
                 ALT_CHECK=$(auto_detect_layout "$DISK")
                 
                 if [ "$ALT_CHECK" != "false" ] && [ -n "$ALT_CHECK" ] && [ "$ALT_CHECK" -gt 0 ]; then
                     PART_COUNT="$ALT_CHECK"
-                    echo "" | tee -a $LOG
-                    echo "⚠️  Автоматическое определение: найдено $PART_COUNT разделов" | tee -a $LOG
-                    echo "Использую эту конфигурацию..." | tee -a $LOG
+                    log_info ""
+                    log_warn "⚠️  Автоматическое определение: найдено $PART_COUNT разделов"
+                    log_info "Использую эту конфигурацию..."
                     
                     configure_fstab "$DISK" "$PART_COUNT"
                     
                     # Завершаем работу после настройки
-                    echo "" | tee -a $LOG
-                    echo "Настройка завершена на основе автоматического определения." | tee -a $LOG
-                    echo "Рекомендуется проверить корректность настроек." | tee -a $LOG
+                    log_info ""
+                    log_info "Настройка завершена на основе автоматического определения."
+                    log_info "Рекомендуется проверить корректность настроек."
                     exit 0
                 fi
             fi
@@ -835,17 +849,17 @@ main() {
                 read -p "Переразметить диск? (Все данные будут удалены!) [y/N]: " CONFIRM
                 
                 if [ "$CONFIRM" = "y" ] || [ "$CONFIRM" = "Y" ]; then
-                    echo "Переразмечаю диск..." | tee -a $LOG
+                    log_info "Переразмечаю диск..."
                     PART_COUNT=$(create_new_partitions "$DISK")
                     configure_fstab "$DISK" "$PART_COUNT"
                     copy_to_extroot "$DISK"
                 else
-                    echo "Отменено пользователем." | tee -a $LOG
+                    log_info "Отменено пользователем."
                     exit 0
                 fi
             else
                 # Автоматический режим (без терминала)
-                echo "Автоматический режим: переразмечаю диск..." | tee -a $LOG
+                log_info "Автоматический режим: переразмечаю диск..."
                 PART_COUNT=$(create_new_partitions "$DISK")
                 configure_fstab "$DISK" "$PART_COUNT"
                 copy_to_extroot "$DISK"
@@ -854,48 +868,48 @@ main() {
     fi
     
     # Показываем итоговую информацию
-    echo "" | tee -a $LOG
-    echo "=== Итоговая информация ===" | tee -a $LOG
-    echo "Таблица разделов:" | tee -a $LOG
+    log_info ""
+    log_info "=== Итоговая информация ==="
+    log_info "Таблица разделов:"
     if command -v parted >/dev/null 2>&1; then
-        parted -s "$DISK" print 2>/dev/null || echo "Не удалось отобразить таблицу разделов"
+        parted -s "$DISK" print 2>/dev/null || log_error "Не удалось отобразить таблицу разделов"
     fi
     
-    echo "" | tee -a $LOG
-    echo "Монтированные разделы:" | tee -a $LOG
-    mount | grep "^$DISK" 2>/dev/null || echo "Нет смонтированных разделов с этого диска"
+    log_info ""
+    log_info "Монтированные разделы:"
+    mount | grep "^$DISK" 2>/dev/null || log_error "Нет смонтированных разделов с этого диска"
     
-    echo "" | tee -a $LOG
-    echo "Настройка fstab завершена успешно!" | tee -a $LOG
-    cat /etc/config/fstab | tee -a $LOG
+    log_info ""
+    log_info "Настройка fstab завершена успешно!"
+    cat /etc/config/fstab
 
     # Удаляем сам скрипт
     rm -f /root/mount_usb.sh
-    echo "Скрипт удален" | tee -a $LOG
-    
+    log_info "Скрипт удален"
+
     # Автоматическая перезагрузка всегда при изменении разметки
     if [ "$EXISTING_PARTS" -eq 0 ] || [ "$CHECK_RESULT" = "false" ]; then
         if [ -t 0 ]; then
-            echo "Для применения изменений требуется перезагрузка." | tee -a $LOG
+            log_info "Для применения изменений требуется перезагрузка."
             read -p "Перезагрузить сейчас? [y/N]: " REBOOT_NOW
             if [ "$REBOOT_NOW" = "y" ] || [ "$REBOOT_NOW" = "Y" ]; then
-                echo "Перезагружаюсь..." | tee -a $LOG
+                log_info "Перезагружаюсь..."
                 sleep 3
                 reboot
             fi
         fi
     else
-        echo "Изменения применены без переразметки." | tee -a $LOG
-        echo "Для полного применения изменений в extroot может потребоваться перезагрузка." | tee -a $LOG
+        log_info "Изменения применены без переразметки."
+        log_info "Для полного применения изменений в extroot может потребоваться перезагрузка."
         if [ -t 0 ]; then
             read -p "Перезагрузить сейчас? [y/N]: " REBOOT_NOW
             if [ "$REBOOT_NOW" = "y" ] || [ "$REBOOT_NOW" = "Y" ]; then
-                echo "Перезагружаюсь..." | tee -a $LOG
+                log_info "Перезагружаюсь..."
                 sleep 3
                 reboot
             fi
         else
-            echo "Перезагружаюсь..." | tee -a $LOG
+            log_info "Перезагружаюсь..."
             reboot
         fi
     fi
