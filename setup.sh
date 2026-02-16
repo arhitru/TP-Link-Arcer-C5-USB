@@ -17,18 +17,18 @@ fi
 . /root/logging_functions.sh
 init_logging
 
-echo "=== Начало установки: $(date) ===" > $LOG_FILE
+log_info "=== Начало установки: $(date) ==="
 
 # Проверяем что система загрузилась
-echo "Проверка системы:" | tee -a $LOG_FILE
+log_info "Проверка системы:"
 uptime >> $LOG_FILE 2>&1
 ifconfig >> $LOG_FILE 2>&1
 
 # Ждем запуска сети
-echo "Ожидание сети..." | tee -a $LOG_FILE
+log_info "Ожидание сети..."
 for i in $(seq 1 30); do
     if ping -c 1 -W 1 8.8.8.8 >/dev/null 2>&1; then
-        echo "Сеть доступна" | tee -a $LOG_FILE
+        log_success "Сеть доступна"
         break
     fi
     sleep 1
@@ -50,7 +50,7 @@ fi
 # --------------------------------------------------
 # ШАГ 1: Предварительные настройки
 # --------------------------------------------------
-echo "1. Настройка системы..." | tee -a $LOG_FILE
+log_info "1. Настройка системы..."
 
 # Разметка и подключение USB
 if [ ! -f "/root/mount_usb.sh" ]; then
@@ -71,7 +71,7 @@ fi
 # --------------------------------------------------
 # ШАГ 2: Подготовка пост-перезагрузочного скрипта
 # --------------------------------------------------
-echo "2. Подготовка пост-перезагрузки..." | tee -a $LOG_FILE
+log_info "2. Подготовка пост-перезагрузки..."
 
 # Создаем скрипт
 if [ ! -f "/root/postboot.sh" ]; then
@@ -142,7 +142,7 @@ chmod +x /root/postboot.sh
 # --------------------------------------------------
 # ШАГ 3: Настройка автозапуска
 # --------------------------------------------------
-echo "3. Настройка автозапуска..." | tee -a $LOG_FILE
+log_info "3. Настройка автозапуска..."
 
 # Создаем или обновляем rc.local
 if [ ! -f /etc/rc.local ]; then
@@ -163,12 +163,12 @@ if ! grep -q "postboot.sh" /etc/rc.local; then
         echo '/root/postboot.sh' >> /etc/rc.local
     fi
     
-    echo "Добавлено в автозагрузку" | tee -a $LOG_FILE
+    log_info "Добавлено в автозагрузку"
 else
-    echo "Уже в автозагрузке" | tee -a $LOG_FILE
+    log_info "Уже в автозагрузке"
 fi
 if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
-    echo "Настройка автозапуска настройки Outline VPN" | tee -a $LOG_FILE
+    log_info "Настройка автозапуска настройки Outline VPN"
     # Проверяем, не добавлен ли уже наш скрипт
     if ! grep -q "outline_vpn.sh" /etc/rc.local; then
         # Добавляем вызов в конец (но перед exit если есть)
@@ -182,46 +182,46 @@ if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
             echo '/root/outline_vpn.sh' >> /etc/rc.local
         fi
         
-        echo "Добавлено в автозагрузку" | tee -a $LOG_FILE
+        log_info "Добавлено в автозагрузку"
     else
-        echo "Уже в автозагрузке" | tee -a $LOG_FILE
+        log_info "Уже в автозагрузке"
     fi
 fi
 
 # Показываем итог
-echo "Итоговый rc.local:" | tee -a $LOG_FILE
+log_info "Итоговый rc.local:"
 cat /etc/rc.local | tee -a $LOG_FILE
 
 # --------------------------------------------------
 # ШАГ 4: Настройка USB
 # --------------------------------------------------
-echo "4. Настройка USB" | tee -a $LOG_FILE
+log_info "4. Настройка USB"
 /root/mount_usb.sh
 
 # --------------------------------------------------
 # ШАГ 5: Перезагрузка
 # --------------------------------------------------
-echo "5. Подготовка к перезагрузке..." | tee -a $LOG_FILE
-echo "Все настройки сохранены." | tee -a $LOG_FILE
-echo "После перезагрузки скрипт выполнится автоматически." | tee -a $LOG_FILE
-echo "Лог будет в /root/postboot.log" | tee -a $LOG_FILE
+log_info "5. Подготовка к перезагрузке..."
+log_info "Все настройки сохранены."
+log_info "После перезагрузки скрипт выполнится автоматически."
+log_info "Лог будет в /root/postboot.log"
 
 # Удаляем сам скрипт
 rm -f /root/setup.sh
-echo "Скрипт удален" | tee -a $LOG_FILE
+log_info "Скрипт удален"
 
 # Перезагрузка
     if [ -t 0 ]; then
         read -p "Перезагрузить сейчас? [y/N]: " REBOOT_NOW
         if [ "$REBOOT_NOW" = "y" ] || [ "$REBOOT_NOW" = "Y" ]; then
-            echo "Перезагружаюсь..." | tee -a $LOG_FILE
+            log_info "Перезагружаюсь..."
             sleep 3
             reboot
         else
-            echo "Перезагрузка отложена. Рекомендуется перезагрузить систему вручную." | tee -a $LOG_FILE
+            log_warn "Перезагрузка отложена. Рекомендуется перезагрузить систему вручную."
         fi
     else
-        echo "=== Начинаю перезагрузку ===" | tee -a $LOG_FILE
+        log_info "=== Начинаю перезагрузку ==="
         sync
         reboot
     fi
