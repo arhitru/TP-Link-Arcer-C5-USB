@@ -10,6 +10,13 @@ RETRY_COUNT=5
 
 CONFIG_FILE="${SCRIPT_DIR}/outline.conf"
 LOG="/root/setup.log"
+
+if [ ! -f "/root/logging_functions.sh" ]; then
+    cd /root && wget https://raw.githubusercontent.com/arhitru/fuctions_bash/refs/heads/main/logging_functions.sh >> $LOG_FILE 2>&1 && chmod +x /root/logging_functions.sh
+fi
+. /root/logging_functions.sh
+init_logging
+
 echo "=== Начало установки: $(date) ===" > $LOG_FILE
 
 # Проверяем что система загрузилась
@@ -26,12 +33,6 @@ for i in $(seq 1 30); do
     fi
     sleep 1
 done
-
-if [ ! -f "/root/logging_functions.sh" ]; then
-    cd /root && wget https://raw.githubusercontent.com/arhitru/fuctions_bash/refs/heads/main/logging_functions.sh >> $LOG_FILE 2>&1 && chmod +x /root/logging_functions.sh
-fi
-. /root/logging_functions.sh
-init_logging
 
 if [ -t 0 ]; then
     read -p "Do you have the Outline key? [y/N]: " OUTLINE
