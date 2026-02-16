@@ -32,8 +32,11 @@ for i in $(seq 1 30); do
 done
 
 if [ -t 0 ]; then
+    # Если скрипт запущен из консоли, то спрашиваем пользователя
+    log_warn "Do you have the Outline key? [y/N]: "
     read -p "Do you have the Outline key? [y/N]: " OUTLINE
     if [ "$OUTLINE" = "y" ] || [ "$OUTLINE" = "Y" ]; then
+        log_warn "Do you want to set up an Outline VPN? [y/N]: "
         read -p "Do you want to set up an Outline VPN? [y/N]: " TUN
         if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
             if [ ! -f "/root/install_outline_settings.sh" ]; then
@@ -209,6 +212,7 @@ log_info "Скрипт удален"
 
 # Перезагрузка
     if [ -t 0 ]; then
+        log_warn "Перезагрузить сейчас? [y/N]: "
         read -p "Перезагрузить сейчас? [y/N]: " REBOOT_NOW
         if [ "$REBOOT_NOW" = "y" ] || [ "$REBOOT_NOW" = "Y" ]; then
             log_info "Перезагружаюсь..."
