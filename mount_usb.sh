@@ -1,24 +1,5 @@
 #!/bin/sh
 
-SCRIPT_NAME=$(basename "$0")
-SCRIPT_DIR=$(dirname "$0")
-LOG_DIR="/root"
-LOG_FILE="${LOG_DIR}/mount_usb.log"
-PID_FILE="/var/run/${SCRIPT_NAME}.pid"
-LOCK_FILE="/var/lock/${SCRIPT_NAME}.lock"
-RETRY_COUNT=5
-
-if [ ! -f "/root/logging_functions.sh" ]; then
-    cd /root && wget https://raw.githubusercontent.com/arhitru/fuctions_bash/refs/heads/main/logging_functions.sh >> $LOG_FILE 2>&1 && chmod +x /root/logging_functions.sh
-fi
-. /root/logging_functions.sh
-init_logging
-
-LOG="/root/mount_usb.log"
-log_info "=== Начало установки: $(date) ===" > $LOG
-
-DISK="/dev/sda"
-
 # Функция для обработки ошибок
 error_exit() {
     log_error "Ошибка: $1"  | tee -a $LOG >&2
@@ -759,6 +740,25 @@ copy_to_extroot() {
 
 # Основной код
 main() {
+    SCRIPT_NAME=$(basename "$0")
+    SCRIPT_DIR=$(dirname "$0")
+    LOG_DIR="/root"
+    LOG_FILE="${LOG_DIR}/mount_usb.log"
+    PID_FILE="/var/run/${SCRIPT_NAME}.pid"
+    LOCK_FILE="/var/lock/${SCRIPT_NAME}.lock"
+    RETRY_COUNT=5
+
+    if [ ! -f "/root/logging_functions.sh" ]; then
+        cd /root && wget https://raw.githubusercontent.com/arhitru/fuctions_bash/refs/heads/main/logging_functions.sh >> $LOG_FILE 2>&1 && chmod +x /root/logging_functions.sh
+    fi
+    . /root/logging_functions.sh
+    init_logging
+
+    LOG="/root/mount_usb.log"
+    log_info "=== Начало установки: $(date) ===" > $LOG
+
+    DISK="/dev/sda"
+
     # Проверяем существование диска
     [ -b "$DISK" ] || error_exit "Диск $DISK не найден"
     
