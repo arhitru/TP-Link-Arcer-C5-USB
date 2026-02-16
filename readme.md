@@ -153,7 +153,7 @@ overlayfs:/overlay     7759872    477328   7221104   6% /
 
 ## **Восстановление удалённых пакетов**
 ```bash
-cd /tmp && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup_required_packages.sh -O setup_required_packages.sh && chmod +x setup_required_packages.sh && ./setup_required_packages.sh
+cd /tmp && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup_required.sh -O setup_required.sh && chmod +x setup_required.sh && ./setup_required_packages.sh
 ```
 
 ## **Сохранение списков программных пакетов при загрузке**
