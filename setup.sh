@@ -55,6 +55,7 @@ log_info "1. Настройка системы..."
 # Разметка и подключение USB
 if [ ! -f "/root/mount_usb.sh" ]; then
     cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/mount_usb.sh >> $LOG_FILE 2>&1 && chmod +x mount_usb.sh
+    . /root/mount_usb.sh
 fi
 
 # Установка недостающих пакетов
@@ -196,7 +197,8 @@ cat /etc/rc.local | tee -a $LOG_FILE
 # ШАГ 4: Настройка USB
 # --------------------------------------------------
 log_info "4. Настройка USB"
-/root/mount_usb.sh
+main_mount_usb
+#/root/mount_usb.sh
 
 # --------------------------------------------------
 # ШАГ 5: Перезагрузка
