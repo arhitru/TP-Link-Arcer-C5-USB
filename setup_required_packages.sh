@@ -179,8 +179,8 @@ fi
 
 # Tunnel
 if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
-    cd /tmp
-    wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/getdomains-install-outline.sh -O getdomains-install-outline.sh
-    chmod +x getdomains-install-outline.sh
-    ./getdomains-install-outline.sh
+    cd /root
+    wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/install_outline_for_getdomains.sh -O ginstall_outline_for_getdomains.sh
+    chmod +x install_outline_for_getdomains.sh
+    ./install_outline_for_getdomains.sh
 fi
