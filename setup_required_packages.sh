@@ -46,6 +46,11 @@ export VERSION_ID=$VERSION_ID
 printf "\033[31;1mAll actions performed here cannot be rolled back automatically.\033[0m\n"
 
 read -p "Install MESH package? [y/N]: " MESH
+
+if [ -t 0 ]; then
+    read -p "Do you want to set up an Podkop? [y/N]: " podkop
+fi
+
 if [ -t 0 ]; then
     read -p "Do you have the Outline key? [y/N]: " OUTLINE
     if [ "$OUTLINE" = "y" ] || [ "$OUTLINE" = "Y" ]; then
@@ -183,4 +188,8 @@ if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
     wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/install_outline_for_getdomains.sh -O install_outline_for_getdomains.sh
     chmod +x install_outline_for_getdomains.sh
     ./install_outline_for_getdomains.sh
+fi
+
+if [ "$podkop" = "y" ] || [ "$podkop" = "Y" ]; then
+    sh <(wget -O - https://raw.githubusercontent.com/itdoginfo/podkop/refs/heads/main/install.sh)
 fi
