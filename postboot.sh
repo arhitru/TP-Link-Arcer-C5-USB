@@ -10,40 +10,47 @@ RETRY_COUNT=5
 
 CONFIG_FILE="${SCRIPT_DIR}/outline.conf"
 LOG="/root/postboot.log"
-echo "=== Post-boot начат: $(date) ===" > $LOG_FILE
+
+if [ ! -f "/root/logging_functions.sh" ]; then
+    cd /root && wget https://raw.githubusercontent.com/arhitru/fuctions_bash/refs/heads/main/logging_functions.sh >> $LOG_FILE 2>&1 && chmod +x /root/logging_functions.sh
+fi
+. /root/logging_functions.sh
+init_logging
+
+log_info "=== Post-boot начат: $(date) ==="
 
 # Ждем полной загрузки
 sleep 60
 
 # Проверяем что система загрузилась
-echo "Проверка системы:" >> $LOG_FILE
+log_info "Проверка системы:"
 uptime >> $LOG_FILE 2>&1
 ifconfig >> $LOG_FILE 2>&1
 
 # Ждем запуска сети
-echo "Ожидание сети..."
+log_info "Ожидание сети..."
 for i in $(seq 1 30); do
     if ping -c 1 -W 1 8.8.8.8 >/dev/null 2>&1; then
-        echo "Сеть доступна"  >> $LOG_FILE
+        log_success "Сеть доступна"
         break
     fi
     sleep 1
 done
 
 # ФИНАЛЬНЫЕ НАСТРОЙКИ:
-echo "Выполняю финальные настройки..." >> $LOG_FILE
+log_info "Выполняю финальные настройки..."
 
 if [ ! -f "/root/setup_required.sh" ]; then
     cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup_required.sh >> $LOG_FILE 2>&1 && chmod +x setup_required.sh
 fi
 
-echo "Запускаю setup_required.sh" >> $LOG_FILE
+log_info "Запускаю setup_required.sh"
 /root/setup_required.sh
 
 # --------------------------------------------------
 # ОЧИСТКА: делаем запуск однократным
 # --------------------------------------------------
-echo "Очистка..." >> $LOG_FILE
+log_info "Очистка..."
 
 # 1. Удаляем вызов из rc.local
 if [ -f /etc/rc.local ]; then
@@ -52,16 +59,16 @@ if [ -f /etc/rc.local ]; then
     if [ $? -eq 0 ]; then
         mv /root/rc.local.new /etc/rc.local
         chmod +x /etc/rc.local
-        echo "Удалено из rc.local" >> $LOG_FILE
+        echo "Удалено из rc.local"
     fi
 fi
 
 # 2. Удаляем сам скрипт
 rm -f /root/postboot.sh
-echo "Скрипт удален" >> $LOG_FILE
+log_info "Скрипт удален"
 
 # 3. Создаем флаг завершения
-echo "COMPLETED_AT_$(date +%s)" > /root/.postboot_done
+log_info "COMPLETED_AT_$(date +%s)" > /root/.postboot_done
 
-echo "=== Post-boot завершен: $(date) ===" >> $LOG_FILE
+log_info "=== Post-boot завершен: $(date) ==="
 exit 0
