@@ -25,24 +25,6 @@ else
 fi
 export AUTO_MODE
 
-
-echo "=== Начало установки: $(date) ===" > $LOG_FILE
-
-# Проверяем что система загрузилась
-echo "Проверка системы:" | tee -a $LOG_FILE
-uptime >> $LOG_FILE 2>&1
-ifconfig >> $LOG_FILE 2>&1
-
-# Ждем запуска сети
-echo "Ожидание сети..." | tee -a $LOG_FILE
-for i in $(seq 1 30); do
-    if ping -c 1 -W 1 8.8.8.8 >/dev/null 2>&1; then
-        echo "Сеть доступна" | tee -a $LOG_FILE
-        break
-    fi
-    sleep 1
-done
-
 # ============================================================================
 # Импорт функций логирования
 # ============================================================================
@@ -53,6 +35,21 @@ fi
 
 # Инициализируем логирование
 init_logging
+
+# Проверяем что система загрузилась
+log_info "Проверка системы:"
+uptime >> $LOG_FILE 2>&1
+ifconfig >> $LOG_FILE 2>&1
+
+# Ждем запуска сети
+log_info "Ожидание сети..."
+for i in $(seq 1 30); do
+    if ping -c 1 -W 1 8.8.8.8 >/dev/null 2>&1; then
+        log_success "Сеть доступна"
+        break
+    fi
+    sleep 1
+done
 
 # Настраиваем Outline
 if [ -t 0 ]; then
