@@ -62,8 +62,11 @@ if [ -t 0 ]; then
         log_question "Do you want to set up an Outline VPN? [y/N]: "
         read TUN
         if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
-            if [ ! -f "/root/install_outline_settings2.sh" ]; then
+            if [ ! -f "/root/install_outline_settings.sh" ]; then
                 cd /root && wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/install_outline_settings.sh >> $LOG_FILE 2>&1 && chmod +x /root/install_outline_settings.sh
+            fi
+            if [ ! -f "/root/install_outline_for_getdomains.sh" ]; then
+                cd /root && wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/install_outline_for_getdomains.sh >> $LOG_FILE 2>&1 && chmod +x /root/install_outline_for_getdomains.sh
             fi
             . /root/install_outline_settings.sh
             install_outline_settings
