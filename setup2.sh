@@ -1,7 +1,8 @@
 #!/bin/sh
 # Основной скрипт установки/настройки OpenWRT
+DISK="/dev/sda"
 SCRIPT_NAME=$(basename "$0")
-SCRIPT_DIR=$(dirname "$0")
+SCRIPT_DIR=/root
 LOG_DIR="/root/logs"
 LOG_FILE="${LOG_DIR}/setup_$(date +%Y%m%d_%H%M%S).log"
 PID_FILE="/var/run/${SCRIPT_NAME}.pid"
@@ -53,6 +54,7 @@ fi
 # Инициализируем логирование
 init_logging
 
+# Настраиваем Outline
 if [ -t 0 ]; then
     log_question "Do you have the Outline key? [y/N]: "
     read OUTLINE
@@ -60,132 +62,11 @@ if [ -t 0 ]; then
         log_question "Do you want to set up an Outline VPN? [y/N]: "
         read TUN
         if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
-            export TUNNEL="tun2socks"
-            # Считывает пользовательскую переменную для конфигурации Outline (Shadowsocks)
-            log_question "Enter Outline (Shadowsocks) Config (format ss://base64coded@HOST:PORT/?outline=1): "
-            read OUTLINECONF
-            export  OUTLINECONF=$OUTLINECONF
-
-            log_question "Configure DNSCrypt2 or Stubby? It does matter if your ISP is spoofing DNS requests"
-            log_question "Select:"
-            log_question "1) No [Default]"
-            log_question "2) DNSCrypt2 (10.7M)"
-            log_question "3) Stubby (36K)"
-
-            while true; do
-            read -r -p '' DNS_RESOLVER
-                case $DNS_RESOLVER in 
-
-                1) 
-                    log_info "Skiped"
-                    break
-                    ;;
-
-                2)
-                    log_info "DNSCRYPT"
-                    export DNS_RESOLVER="DNSCRYPT"
-                    break
-                    ;;
-
-                3) 
-                    log_info "STUBBY"
-                    export DNS_RESOLVER="STUBBY"
-                    break
-                    ;;
-
-                *)
-                    log_warn "Choose from the following options"
-                    ;;
-                esac
-            done
-
-            log_question "Choose you country"
-            log_question "Select:"
-            log_question "1) Russia inside. You are inside Russia"
-            log_question "2) Russia outside. You are outside of Russia, but you need access to Russian resources"
-            log_question "3) Ukraine. uablacklist.net list"
-            log_question "4) Skip script creation"
-
-            while true; do
-            read -r -p '' COUNTRY
-                case $COUNTRY in 
-
-                1) 
-                    log_info "Russia inside. You are inside Russia"
-                    export COUNTRY="russia_inside"
-                    break
-                    ;;
-
-                2)
-                    log_info "Russia outside. You are outside of Russia, but you need access to Russian resources"
-                    export COUNTRY="russia_outside"
-                    break
-                    ;;
-
-                3) 
-                    log_info "Ukraine. uablacklist.net list"
-                    export COUNTRY="ukraine"
-                    break
-                    ;;
-
-                4) 
-                    log_warn "Skiped"
-                    export COUNTRY=0
-                    break
-                    ;;
-
-                *)
-                    log_warn "Choose from the following options"
-                    ;;
-                esac
-            done
-            # Ask user to use Outline as default gateway
-            # Задает вопрос пользователю о том, следует ли использовать Outline в качестве шлюза по умолчанию
-            log_question "Use Outline as default gateway? [y/N]: "
-            read DEFAULT_GATEWAY
-            if [ "$DEFAULT_GATEWAY" = "y" ] || [ "$DEFAULT_GATEWAY" = "Y" ]; then
-                export OUTLINE_DEFAULT_GATEWAY=$DEFAULT_GATEWAY
+            if [ ! -f "/root/install_outline_settings2.sh" ]; then
+                cd /root && wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/install_outline_settings2.sh >> $LOG_FILE 2>&1 && chmod +x /root/install_outline_settings2.sh
             fi
-            if [! -f "$CONFIG_FILE" ]; then
-                log_info "Файл конфигурации Outline"
-                cat > "$CONFIG_FILE" << 'EOF'
-# ============================================================================
-# Конфигурация outline_vpn
-# ============================================================================
-
-TUNNEL="tun2socks"
-OUTLINECONF=$OUTLINECONF
-DNS_RESOLVER=$DNS_RESOLVER
-COUNTRY=$COUNTRY
-OUTLINE_DEFAULT_GATEWAY=$DEFAULT_GATEWAY
-VERSION_ID=$VERSION_ID
-
-# Список обязательных пакетов
-REQUIRED_PACKAGES="
-curl
-nano
-kmod-tun
-ip-full
-"
-
-# Пакеты для замены
-REPLACE_PACKAGES="
-dnsmasq:dnsmasq-full
-"
-
-# Таймаут для операций (секунды)
-OPKG_TIMEOUT=300
-
-# Количество попыток при ошибке
-RETRY_COUNT=3
-
-# Режим отладки (0/1)
-DEBUG=0
-EOF
-                log_info "Создан файл конфигурации по умолчанию: $CONFIG_FILE"
-                cd /root && wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/install_outline_for_getdomains.sh && chmod +x install_outline_for_getdomains.sh
-
-            fi
+            . /root/install_outline_settings2.sh
+            install_outline_settings
         fi
     fi
 fi
