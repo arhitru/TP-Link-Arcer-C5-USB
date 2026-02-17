@@ -12,7 +12,7 @@ set -e  # Прерывать выполнение при ошибке
 # Конфигурация
 # ============================================================================
 SCRIPT_NAME=$(basename "$0")
-SCRIPT_DIR=$(dirname "$0")
+SCRIPT_DIR=/root
 LOG_DIR="/root/logs"
 LOG_FILE="${LOG_DIR}/setup_$(date +%Y%m%d_%H%M%S).log"
 PID_FILE="/var/run/${SCRIPT_NAME}.pid"
