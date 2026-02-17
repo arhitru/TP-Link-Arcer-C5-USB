@@ -63,9 +63,9 @@ if [ -t 0 ]; then
         read TUN
         if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
             if [ ! -f "/root/install_outline_settings2.sh" ]; then
-                cd /root && wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/install_outline_settings2.sh >> $LOG_FILE 2>&1 && chmod +x /root/install_outline_settings2.sh
+                cd /root && wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/install_outline_settings.sh >> $LOG_FILE 2>&1 && chmod +x /root/install_outline_settings.sh
             fi
-            . /root/install_outline_settings2.sh
+            . /root/install_outline_settings.sh
             install_outline_settings
         fi
     fi
