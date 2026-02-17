@@ -206,7 +206,7 @@ if [ ! -f "/root/postboot.sh" ]; then
     cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/postboot.sh >> $LOG_FILE 2>&1
 fi
 if [ ! -f "/root/setup_required.sh" ]; then
-    cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup_required.sh >> $LOG_FILE 2>&1 && chmod +x setup_required.sh
+    cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup_required2.sh >> $LOG_FILE 2>&1 && chmod +x setup_required2.sh
 fi
 if [ ! -f "/root/setup_required.conf" ]; then
     cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup_required.conf >> $LOG_FILE 2>&1
