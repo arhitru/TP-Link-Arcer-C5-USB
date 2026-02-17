@@ -13,7 +13,7 @@ set -e  # Прерывать выполнение при ошибке
 # ============================================================================
 SCRIPT_NAME=$(basename "$0")
 SCRIPT_DIR=/root
-LOG_DIR="/root/logs"
+LOG_DIR="/root"
 LOG_FILE="${LOG_DIR}/setup_$(date +%Y%m%d_%H%M%S).log"
 PID_FILE="/var/run/${SCRIPT_NAME}.pid"
 LOCK_FILE="/var/lock/${SCRIPT_NAME}.lock"
@@ -35,24 +35,6 @@ else
 fi
 export AUTO_MODE
 
-
-echo "=== Начало установки: $(date) ===" > $LOG_FILE
-
-# Проверяем что система загрузилась
-echo "Проверка системы:" | tee -a $LOG_FILE
-uptime >> $LOG_FILE 2>&1
-ifconfig >> $LOG_FILE 2>&1
-
-# Ждем запуска сети
-echo "Ожидание сети..." | tee -a $LOG_FILE
-for i in $(seq 1 30); do
-    if ping -c 1 -W 1 8.8.8.8 >/dev/null 2>&1; then
-        echo "Сеть доступна" | tee -a $LOG_FILE
-        break
-    fi
-    sleep 1
-done
-
 # ============================================================================
 # Импорт функций логирования
 # ============================================================================
@@ -60,6 +42,24 @@ if [ ! -f "/root/logging_functions.sh" ]; then
     cd /root && wget https://raw.githubusercontent.com/arhitru/fuctions_bash/refs/heads/main/logging_functions.sh >> $LOG_FILE 2>&1 && chmod +x /root/logging_functions.sh
 fi
 . /root/logging_functions.sh
+
+# Инициализируем логирование
+init_logging
+
+# Проверяем что система загрузилась
+log_info "Проверка системы:"
+uptime >> $LOG_FILE 2>&1
+ifconfig >> $LOG_FILE 2>&1
+
+# Ждем запуска сети
+log_info "Ожидание сети..."
+for i in $(seq 1 30); do
+    if ping -c 1 -W 1 8.8.8.8 >/dev/null 2>&1; then
+        log_success "Сеть доступна"
+        break
+    fi
+    sleep 1
+done
 
 # ============================================================================
 # Функции управления выполнением
