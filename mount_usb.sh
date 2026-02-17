@@ -3,8 +3,8 @@
 # Основные переменные
 # ============================================================================
 DISK="/dev/sda"
-SCRIPT_NAME="mount_usb"
-LOG_DIR="/root/logs"
+SCRIPT_NAME=$(basename "$0")
+LOG_DIR="/root"
 LOG_FILE="${LOG_DIR}/${SCRIPT_NAME}.log"
 DEBUG=0
 AUTO_MODE=0
