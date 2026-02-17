@@ -4,7 +4,7 @@ DISK="/dev/sda"
 SCRIPT_NAME=$(basename "$0")
 SCRIPT_DIR=/root
 LOG_DIR="/root"
-LOG_FILE="${LOG_DIR}/setup_$(date +%Y%m%d_%H%M%S).log"
+LOG_FILE="${LOG_DIR}/${SCRIPT_NAME}.log"
 PID_FILE="/var/run/${SCRIPT_NAME}.pid"
 LOCK_FILE="/var/lock/${SCRIPT_NAME}.lock"
 CONFIG_FILE="${SCRIPT_DIR}/setup_required.conf"
@@ -141,7 +141,7 @@ fi
 
 # Показываем итог
 log_info "Итоговый rc.local:"
-cat /etc/rc.local | tee -a $LOG
+cat /etc/rc.local
 
 # --------------------------------------------------
 # ШАГ 3: Настройка USB
