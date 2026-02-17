@@ -319,11 +319,8 @@ main() {
     fi
 
     # 2. Удаляем сам скрипт
-    rm -f /root/setup_required2.sh
+    rm -f /root/setup_required2.sh >> $LOG_FILE 2>&1
     log_warn "Скрипт setup_required удален"
-
-    # 3. Создаем флаг завершения
-    log_info "COMPLETED_AT_$(date +%s)" > /root/.postboot_done
 
     log_info "=== Post-boot завершен: $(date) ==="
 
