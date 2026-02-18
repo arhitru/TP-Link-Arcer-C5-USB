@@ -84,7 +84,8 @@ if [ -t 0 ]; then
             if [ ! -f "/root/get_outline_settings.sh" ]; then
                 cd /root && wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/get_outline_settings.sh >> $LOG_FILE 2>&1 && chmod +x /root/get_outline_settings.sh
             fi
-            ./get_outline_settings.sh
+            . /root/install_outline_settings.sh
+            install_outline_settings
         fi
     fi
 fi
