@@ -234,7 +234,8 @@ log_info "Скрипт удален"
 
 # Перезагрузка
     if [ -t 0 ]; then
-        read -p "Перезагрузить сейчас? [y/N]: " REBOOT_NOW
+        log_question "Перезагрузить сейчас? [y/N]: "
+        read REBOOT_NOW
         if [ "$REBOOT_NOW" = "y" ] || [ "$REBOOT_NOW" = "Y" ]; then
             log_info "Перезагружаюсь..."
             sleep 3
