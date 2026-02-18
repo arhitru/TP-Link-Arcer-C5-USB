@@ -106,7 +106,7 @@ if ! grep -q "setup_required2.sh" /etc/rc.local; then
     # Добавляем вызов в конец (но перед exit если есть)
     if grep -q "^exit" /etc/rc.local; then
         # Вставляем перед exit
-        sed -i '/^exit/i # Auto-generated post-boot script (will self-remove)\n/root/setup_required2.sh &' /etc/rc.local
+        sed -i '/^exit/i # Auto-generated post-boot script (will self-remove)\n/root/setup_required2.sh' /etc/rc.local
     else
         # Добавляем в конец
         echo '' >> /etc/rc.local
@@ -125,7 +125,7 @@ if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
         # Добавляем вызов в конец (но перед exit если есть)
         if grep -q "^exit" /etc/rc.local; then
             # Вставляем перед exit
-            sed -i '/^exit/i # Auto-generated post-boot script (will self-remove)\n/root/install_outline_for_getdomains.sh &' /etc/rc.local
+            sed -i '/^exit/i # Auto-generated post-boot script (will self-remove)\n/root/install_outline_for_getdomains.sh' /etc/rc.local
         else
             # Добавляем в конец
             echo '' >> /etc/rc.local
