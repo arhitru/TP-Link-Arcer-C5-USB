@@ -363,10 +363,12 @@ replace_package() {
     fi
     
     # Создаем временную директорию для кэша
-    local tmp_dir="/tmp"
+    # local tmp_dir="/tmp"
     
     # Скачиваем новый пакет
-    if ! opkg download "$new_pkg" --cache /tmp > /tmp/opkg_download.log 2>&1; then
+    cd /tmp/
+
+    if ! opkg download "$new_pkg" > /tmp/opkg_download.log 2>&1; then
         log_error "Не удалось скачать пакет $new_pkg"
         cat /tmp/opkg_download.log >> "$LOG_FILE"
         rm -rf /tmp/opkg_download.log
