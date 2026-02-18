@@ -44,6 +44,11 @@ fi
 log_info "Запускаю setup_required.sh"
 /root/setup_required.sh
 
+if [ -f "/root/outline_vpn.sh"]; then
+    log_info "Запускаю outline_vpn.sh"
+    /root/outline_vpn.sh
+fi
+
 # --------------------------------------------------
 # ОЧИСТКА: делаем запуск однократным
 # --------------------------------------------------
