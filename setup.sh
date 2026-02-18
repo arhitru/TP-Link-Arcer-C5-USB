@@ -129,7 +129,7 @@ OUTLINE_DEFAULT_GATEWAY=$DEFAULT_GATEWAY
 
 EOF
                 echo "Создан файл конфигурации по умолчанию: $OUTLINE_CONFIG_FILE" | tee -a $LOG
-                cd /root && wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/getdomains-install-outline.sh -O /root/outline_vpn.sh && chmod +x outline_vpn.sh
+                cd /root && wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/install_outline_for_getdomains.sh -O /root/outline_vpn.sh && chmod +x outline_vpn.sh
 
             fi
         fi
