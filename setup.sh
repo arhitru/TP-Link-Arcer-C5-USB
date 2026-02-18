@@ -49,6 +49,7 @@ if [ ! -f "/root/mount_usb_function.sh" ]; then
     cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/mount_usb_function.sh >> $LOG_FILE 2>&1 && chmod +x mount_usb_function.sh
 fi
 
+init_logging
 
 echo "=== Начало установки: $(date) ===" > $LOG_FILE
 
