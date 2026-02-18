@@ -28,11 +28,16 @@ if [ ! -f "/root/execution_management_functions.sh" ]; then
     cd /root && wget https://raw.githubusercontent.com/arhitru/fuctions_bash/refs/heads/main/execution_management_functions.sh >> $LOG_FILE 2>&1 && chmod +x /root/execution_management_functions.sh
 fi
 
+if [ ! -f "/root/opkg_functions.sh" ]; then
+    cd /root && wget https://raw.githubusercontent.com/arhitru/fuctions_bash/refs/heads/main/opkg_functions.sh >> $LOG_FILE 2>&1 && chmod +x /root/opkg_functions.sh
+fi
+
 
 #  Импорт функций настройки USB
 if [ ! -f "/root/mount_usb_function.sh" ]; then
     cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/mount_usb_function.sh >> $LOG_FILE 2>&1 && chmod +x mount_usb_function.sh
 fi
+
 
 echo "=== Начало установки: $(date) ===" > $LOG
 
@@ -61,8 +66,10 @@ if [ -t 0 ]; then
         if [ ! -f "/root/install_outline_for_getdomains.sh" ]; then
             cd /root && wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/install_outline_for_getdomains.sh >> $LOG_FILE 2>&1 && chmod +x /root/install_outline_for_getdomains.sh
         fi
-        . /root/install_outline_settings.sh
-        # install_outline_settings
+        if [ ! -f "/root/install_outline_settings.sh" ]; then
+            cd /root && wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/get_outline_settings.sh >> $LOG_FILE 2>&1 && chmod +x /root/get_outline_settings.sh
+        fi
+        ./get_outline_settings.sh
 
         if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
             export TUNNEL="tun2socks"
