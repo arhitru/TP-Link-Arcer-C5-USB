@@ -1,6 +1,17 @@
 #!/bin/sh
 # Основной скрипт установки/настройки OpenWRT
-
+DISK="/dev/sda"
+SCRIPT_NAME=$(basename "$0")
+SCRIPT_DIR=/root
+LOG_DIR="/root"
+LOG_FILE="${LOG_DIR}/${SCRIPT_NAME}.log"
+PID_FILE="/var/run/${SCRIPT_NAME}.pid"
+LOCK_FILE="/var/lock/${SCRIPT_NAME}.lock"
+CONFIG_FILE="${SCRIPT_DIR}/setup_required.conf"
+OUTLINE_CONFIG_FILE="${SCRIPT_DIR}/outline.conf"
+RETRY_COUNT=5
+DEBUG=0
+LOG=$LOG_FILE
 CONFIG_FILE="${SCRIPT_DIR}/outline.conf"
 LOG="/root/setup.log"
 echo "=== Начало установки: $(date) ===" > $LOG
@@ -104,9 +115,9 @@ if [ -t 0 ]; then
             if [ "$DEFAULT_GATEWAY" = "y" ] || [ "$DEFAULT_GATEWAY" = "Y" ]; then
                 export OUTLINE_DEFAULT_GATEWAY=$DEFAULT_GATEWAY
             fi
-            if [! -f "$CONFIG_FILE" ]; then
+            if [! -f "$OUTLINE_CONFIG_FILE" ]; then
                 echo "Файл конфигурации Outline" | tee -a $LOG
-                cat > "$CONFIG_FILE" << 'EOF'
+                cat > "$OUTLINE_CONFIG_FILE" << 'EOF'
 # ============================================================================
 # Конфигурация outline_vpn
 # ============================================================================
@@ -118,7 +129,7 @@ COUNTRY=$COUNTRY
 OUTLINE_DEFAULT_GATEWAY=$DEFAULT_GATEWAY
 
 EOF
-                echo "Создан файл конфигурации по умолчанию: $CONFIG_FILE" | tee -a $LOG
+                echo "Создан файл конфигурации по умолчанию: $OUTLINE_CONFIG_FILE" | tee -a $LOG
                 cd /root && wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/getdomains-install-outline.sh -O /root/outline_vpn.sh && chmod +x outline_vpn.sh
 
             fi
