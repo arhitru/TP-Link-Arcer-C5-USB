@@ -62,10 +62,29 @@ if [ -t 0 ]; then
             cd /root && wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/install_outline_for_getdomains.sh >> $LOG_FILE 2>&1 && chmod +x /root/install_outline_for_getdomains.sh
         fi
         . /root/install_outline_settings.sh
-        install_outline_settings
+        # install_outline_settings
 
         if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
             export TUNNEL="tun2socks"
+            # Проверка версии OpenWrt
+            if [ -f /etc/os-release ]; then
+                # shellcheck source=/etc/os-release
+                . /etc/os-release
+                log_info "Версия OpenWrt: $OPENWRT_RELEASE"
+                
+                VERSION=$(grep 'VERSION=' /etc/os-release | cut -d'"' -f2)
+                VERSION_ID=$(echo "$VERSION" | awk -F. '{print $1}')
+                export VERSION_ID
+                
+                # Проверка совместимости
+                if [ "$VERSION_ID" -lt 19 ]; then
+                    log_warn "Версия OpenWrt ($VERSION_ID) может быть несовместима"
+                fi
+            else
+                VERSION_ID=0
+                log_warn "Не удалось определить версию OpenWrt"
+            fi
+
             # Считывает пользовательскую переменную для конфигурации Outline (Shadowsocks)
             read -p "Enter Outline (Shadowsocks) Config (format ss://base64coded@HOST:PORT/?outline=1): " OUTLINECONF
             export  OUTLINECONF=$OUTLINECONF
@@ -156,7 +175,29 @@ OUTLINECONF=$OUTLINECONF
 DNS_RESOLVER=$DNS_RESOLVER
 COUNTRY=$COUNTRY
 OUTLINE_DEFAULT_GATEWAY=$DEFAULT_GATEWAY
+VERSION_ID=$VERSION_ID
 
+# Список обязательных пакетов
+REQUIRED_PACKAGES="
+curl
+nano
+kmod-tun
+ip-full
+"
+
+# Пакеты для замены
+REPLACE_PACKAGES="
+dnsmasq:dnsmasq-full
+"
+
+# Таймаут для операций (секунды)
+OPKG_TIMEOUT=300
+
+# Количество попыток при ошибке
+RETRY_COUNT=3
+
+# Режим отладки (0/1)
+DEBUG=0
 EOF
                 echo "Создан файл конфигурации по умолчанию: $OUTLINE_CONFIG_FILE" | tee -a $LOG
             fi
