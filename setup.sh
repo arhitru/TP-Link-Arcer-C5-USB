@@ -12,7 +12,18 @@ OUTLINE_CONFIG_FILE="${SCRIPT_DIR}/outline.conf"
 RETRY_COUNT=5
 DEBUG=0
 LOG=$LOG_FILE
-LOG="/root/setup.log"
+
+# ============================================================================
+# Импорт функций логирования
+# ============================================================================
+if [ ! -f "/root/logging_functions.sh" ]; then
+    cd /root && wget https://raw.githubusercontent.com/arhitru/fuctions_bash/refs/heads/main/logging_functions.sh >> $LOG_FILE 2>&1 && chmod +x /root/logging_functions.sh
+fi
+. /root/logging_functions.sh
+
+# Инициализируем логирование
+init_logging
+
 echo "=== Начало установки: $(date) ===" > $LOG
 
 # Проверяем что система загрузилась
@@ -34,16 +45,20 @@ if [ -t 0 ]; then
     read -p "Do you have the Outline key? [y/N]: " OUTLINE
     if [ "$OUTLINE" = "y" ] || [ "$OUTLINE" = "Y" ]; then
         read -p "Do you want to set up an Outline VPN? [y/N]: " TUN
-        cd /root && wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/install_outline_settings.sh
+        if [ ! -f "/root/install_outline_settings.sh" ]; then
+            cd /root && wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/install_outline_settings.sh >> $LOG_FILE 2>&1 && chmod +x /root/install_outline_settings.sh
+        fi
+        if [ ! -f "/root/install_outline_for_getdomains.sh" ]; then
+            cd /root && wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/install_outline_for_getdomains.sh >> $LOG_FILE 2>&1 && chmod +x /root/install_outline_for_getdomains.sh
+        fi
         . /root/install_outline_settings.sh
         install_outline_settings
+
         if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
             export TUNNEL="tun2socks"
             # Считывает пользовательскую переменную для конфигурации Outline (Shadowsocks)
             read -p "Enter Outline (Shadowsocks) Config (format ss://base64coded@HOST:PORT/?outline=1): " OUTLINECONF
             export  OUTLINECONF=$OUTLINECONF
-            cd /root && wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/install_outline_settings.sh
-            . /root/install_outline_settings.sh
 
             printf "\033[33mConfigure DNSCrypt2 or Stubby? It does matter if your ISP is spoofing DNS requests\033[0m\n"
             echo "Select:"
@@ -134,8 +149,6 @@ OUTLINE_DEFAULT_GATEWAY=$DEFAULT_GATEWAY
 
 EOF
                 echo "Создан файл конфигурации по умолчанию: $OUTLINE_CONFIG_FILE" | tee -a $LOG
-                cd /root && wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/install_outline_for_getdomains.sh -O /root/outline_vpn.sh && chmod +x outline_vpn.sh
-
             fi
         fi
     fi
