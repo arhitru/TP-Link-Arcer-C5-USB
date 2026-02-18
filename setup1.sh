@@ -227,7 +227,7 @@ log_info "После перезагрузки скрипт выполнится 
 log_info "Лог будет в /root/postboot.log"
 
 # Удаляем сам скрипт
-rm -f /root/setup.sh
+rm -f /root/setup1.sh
 log_info "Скрипт удален"
 
 # Перезагрузка
