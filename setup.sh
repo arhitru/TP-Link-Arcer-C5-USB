@@ -256,26 +256,6 @@ if ! grep -q "postboot.sh" /etc/rc.local; then
 else
     echo "Уже в автозагрузке" | tee -a $LOG
 fi
-if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
-    echo "Настройка автозапуска настройки Outline VPN" | tee -a $LOG
-    # Проверяем, не добавлен ли уже наш скрипт
-    if ! grep -q "outline_vpn.sh" /etc/rc.local; then
-        # Добавляем вызов в конец (но перед exit если есть)
-        if grep -q "^exit" /etc/rc.local; then
-            # Вставляем перед exit
-            sed -i '/^exit/i # Auto-generated post-boot script (will self-remove)\n/root/outline_vpn.sh &' /etc/rc.local
-        else
-            # Добавляем в конец
-            echo '' >> /etc/rc.local
-            echo '# Auto-generated post-boot script (will self-remove)' >> /etc/rc.local
-            echo '/root/outline_vpn.sh' >> /etc/rc.local
-        fi
-        
-        echo "Добавлено в автозагрузку" | tee -a $LOG
-    else
-        echo "Уже в автозагрузке" | tee -a $LOG
-    fi
-fi
 
 # Показываем итог
 echo "Итоговый rc.local:" | tee -a $LOG
