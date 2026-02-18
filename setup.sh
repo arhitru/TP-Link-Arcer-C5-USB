@@ -28,12 +28,23 @@ if [ ! -f "/root/execution_management_functions.sh" ]; then
     cd /root && wget https://raw.githubusercontent.com/arhitru/fuctions_bash/refs/heads/main/execution_management_functions.sh >> $LOG_FILE 2>&1 && chmod +x /root/execution_management_functions.sh
 fi
 
+# ============================================================================
+# Функции проверки системы
+# ============================================================================
+if [ ! -f "/root/system_verification_functions.sh" ]; then
+    cd /root && wget https://raw.githubusercontent.com/arhitru/fuctions_bash/refs/heads/main/system_verification_functions.sh >> $LOG_FILE 2>&1 && chmod +x /root/system_verification_functions.sh
+fi
+
+# ============================================================================
+# Функции работы с opkg
+# ============================================================================
 if [ ! -f "/root/opkg_functions.sh" ]; then
     cd /root && wget https://raw.githubusercontent.com/arhitru/fuctions_bash/refs/heads/main/opkg_functions.sh >> $LOG_FILE 2>&1 && chmod +x /root/opkg_functions.sh
 fi
 
-
-#  Импорт функций настройки USB
+# ============================================================================
+#  Функции настройки USB
+# ============================================================================
 if [ ! -f "/root/mount_usb_function.sh" ]; then
     cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/mount_usb_function.sh >> $LOG_FILE 2>&1 && chmod +x mount_usb_function.sh
 fi
