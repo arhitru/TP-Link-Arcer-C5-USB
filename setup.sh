@@ -12,7 +12,6 @@ OUTLINE_CONFIG_FILE="${SCRIPT_DIR}/outline.conf"
 RETRY_COUNT=5
 DEBUG=0
 LOG=$LOG_FILE
-CONFIG_FILE="${SCRIPT_DIR}/outline.conf"
 LOG="/root/setup.log"
 echo "=== Начало установки: $(date) ===" > $LOG
 
