@@ -50,18 +50,18 @@ if [ ! -f "/root/mount_usb_function.sh" ]; then
 fi
 
 
-echo "=== Начало установки: $(date) ===" > $LOG
+echo "=== Начало установки: $(date) ===" > $LOG_FILE
 
 # Проверяем что система загрузилась
-echo "Проверка системы:" | tee -a $LOG
-uptime >> $LOG 2>&1
-ifconfig >> $LOG 2>&1
+echo "Проверка системы:" | tee -a $LOG_FILE
+uptime >> $LOG_FILE 2>&1
+ifconfig >> $LOG_FILE 2>&1
 
 # Ждем запуска сети
-echo "Ожидание сети..." | tee -a $LOG
+echo "Ожидание сети..." | tee -a $LOG_FILE
 for i in $(seq 1 30); do
     if ping -c 1 -W 1 8.8.8.8 >/dev/null 2>&1; then
-        echo "Сеть доступна" | tee -a $LOG
+        echo "Сеть доступна" | tee -a $LOG_FILE
         break
     fi
     sleep 1
@@ -77,7 +77,7 @@ if [ -t 0 ]; then
         if [ ! -f "/root/install_outline_for_getdomains.sh" ]; then
             cd /root && wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/install_outline_for_getdomains.sh >> $LOG_FILE 2>&1 && chmod +x /root/install_outline_for_getdomains.sh
         fi
-        if [ ! -f "/root/install_outline_settings.sh" ]; then
+        if [ ! -f "/root/get_outline_settings.sh" ]; then
             cd /root && wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/get_outline_settings.sh >> $LOG_FILE 2>&1 && chmod +x /root/get_outline_settings.sh
         fi
         ./get_outline_settings.sh
