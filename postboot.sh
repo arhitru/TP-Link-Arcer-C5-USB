@@ -45,9 +45,9 @@ fi
 log_info "Запускаю setup_required.sh"
 /root/setup_required.sh
 
-if [ -f "/root/outline_vpn.sh"]; then
+if [ -f "/root/install_outline_for_getdomains.sh"]; then
     log_info "Запускаю outline_vpn.sh"
-    /root/outline_vpn.sh
+    /root/install_outline_for_getdomains.sh
 fi
 
 # --------------------------------------------------
