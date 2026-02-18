@@ -212,18 +212,6 @@ rm -f /root/setup.sh
 log_info "Скрипт удален"
 
 # Перезагрузка
-    if [ -t 0 ]; then
-        log_question "Перезагрузить сейчас? [y/N]: "
-        read REBOOT_NOW
-        if [ "$REBOOT_NOW" = "y" ] || [ "$REBOOT_NOW" = "Y" ]; then
-            log_info "Перезагружаюсь..."
-            sleep 3
-            reboot
-        else
-            log_info "Перезагрузка отложена. Рекомендуется перезагрузить систему вручную."
-        fi
-    else
-        log_info "=== Начинаю перезагрузку ==="
-        sync
-        reboot
-    fi
+log_info "Перезагружаюсь..."
+sleep 3
+reboot
