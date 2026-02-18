@@ -21,8 +21,12 @@ if [ ! -f "/root/logging_functions.sh" ]; then
 fi
 . /root/logging_functions.sh
 
-# Инициализируем логирование
-init_logging
+# ============================================================================
+# Функции управления выполнением
+# ============================================================================
+if [ ! -f "/root/execution_management_functions.sh" ]; then
+    cd /root && wget https://raw.githubusercontent.com/arhitru/fuctions_bash/refs/heads/main/execution_management_functions.sh >> $LOG_FILE 2>&1 && chmod +x /root/execution_management_functions.sh
+fi
 
 echo "=== Начало установки: $(date) ===" > $LOG
 
