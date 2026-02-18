@@ -68,27 +68,6 @@ for i in $(seq 1 30); do
     sleep 1
 done
 
-if [ -t 0 ]; then
-    log_question "Do you have the Outline key? [y/N]: "
-    read OUTLINE
-    if [ "$OUTLINE" = "y" ] || [ "$OUTLINE" = "Y" ]; then
-        log_question "Do you want to set up an Outline VPN? [y/N]: "
-        read TUN
-        if [ "$TUN" = "y" ] || [ "$TUN" = "Y" ]; then
-            if [ ! -f "/root/install_outline_settings.sh" ]; then
-                cd /root && wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/install_outline_settings.sh >> $LOG_FILE 2>&1 && chmod +x /root/install_outline_settings.sh
-            fi
-            if [ ! -f "/root/install_outline_for_getdomains.sh" ]; then
-                cd /root && wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/install_outline_for_getdomains.sh >> $LOG_FILE 2>&1 && chmod +x /root/install_outline_for_getdomains.sh
-            fi
-            if [ ! -f "/root/get_outline_settings.sh" ]; then
-                cd /root && wget https://raw.githubusercontent.com/arhitru/install_outline/refs/heads/main/get_outline_settings.sh >> $LOG_FILE 2>&1 && chmod +x /root/get_outline_settings.sh
-            fi
-            ./get_outline_settings.sh
-        fi
-    fi
-fi
-
 # --------------------------------------------------
 # ШАГ 1: Предварительные настройки
 # --------------------------------------------------
