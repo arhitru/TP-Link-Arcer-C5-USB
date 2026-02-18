@@ -114,7 +114,7 @@ if [ -t 0 ]; then
             if [ "$DEFAULT_GATEWAY" = "y" ] || [ "$DEFAULT_GATEWAY" = "Y" ]; then
                 export OUTLINE_DEFAULT_GATEWAY=$DEFAULT_GATEWAY
             fi
-            if [! -f "$OUTLINE_CONFIG_FILE" ]; then
+            if [ ! -f "$OUTLINE_CONFIG_FILE" ]; then
                 echo "Файл конфигурации Outline" | tee -a $LOG
                 cat > "$OUTLINE_CONFIG_FILE" << 'EOF'
 # ============================================================================
