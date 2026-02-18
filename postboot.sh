@@ -45,7 +45,7 @@ fi
 log_info "Запускаю setup_required.sh"
 /root/setup_required.sh
 
-if [ -f "/root/install_outline_for_getdomains.sh"]; then
+if [ -f "/root/install_outline_for_getdomains.sh" ]; then
     log_info "Запускаю outline_vpn.sh"
     /root/install_outline_for_getdomains.sh
 fi
@@ -68,10 +68,27 @@ fi
 
 # 2. Удаляем сам скрипт
 rm -f /root/postboot.sh
+rm -f /root/*.sh
 log_info "Скрипт удален"
 
 # 3. Создаем флаг завершения
 log_info "COMPLETED_AT_$(date +%s)" > /root/.postboot_done
 
 log_info "=== Post-boot завершен: $(date) ==="
+
+# Перезагрузка
+    if [ -t 0 ]; then
+        log_question "Перезагрузить сейчас? [y/N]:"
+        read REBOOT_NOW
+        if [ "$REBOOT_NOW" = "y" ] || [ "$REBOOT_NOW" = "Y" ]; then
+            log_info "Перезагружаюсь..."
+            reboot
+        else
+            log_warn "Перезагрузка отложена. Рекомендуется перезагрузить систему вручную."
+        fi
+    else
+        log_info "=== Начинаю перезагрузку ==="
+        sync
+        reboot
+    fi
 exit 0
