@@ -249,7 +249,7 @@ if ! grep -q "postboot.sh" /etc/rc.local; then
     # Добавляем вызов в конец (но перед exit если есть)
     if grep -q "^exit" /etc/rc.local; then
         # Вставляем перед exit
-        sed -i '/^exit/i # Auto-generated post-boot script (will self-remove)\n/root/postboot.sh &' /etc/rc.local
+        sed -i '/^exit/i # Auto-generated post-boot script (will self-remove)\n/root/postboot.sh' /etc/rc.local
     else
         # Добавляем в конец
         echo '' >> /etc/rc.local
