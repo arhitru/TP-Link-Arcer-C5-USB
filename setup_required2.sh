@@ -248,6 +248,7 @@ generate_report() {
 # ============================================================================
 main() {
     # Инициализация
+    sleep 300
     check_root
     check_single_instance
     init_logging
