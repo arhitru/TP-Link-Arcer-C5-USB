@@ -12,6 +12,7 @@ OUTLINE_CONFIG_FILE="${SCRIPT_DIR}/outline.conf"
 RETRY_COUNT=5
 DEBUG=0
 LOG=$LOG_FILE
+NET_WAIT_SEC=120
 
 # Режим выполнения (auto/interactive)
 if [ "$1" = "--auto" ] || [ "$1" = "-a" ]; then
@@ -63,22 +64,11 @@ fi
 
 init_logging
 
+check_system_load
+
+check_net_up $NET_WAIT_SEC
+
 log_info "=== Начало установки: $(date) ===" > $LOG_FILE
-
-# Проверяем что система загрузилась
-log_info "Проверка системы:"
-uptime >> $LOG_FILE 2>&1
-ifconfig >> $LOG_FILE 2>&1
-
-# Ждем запуска сети
-log_info "Ожидание сети..."
-for i in $(seq 1 30); do
-    if ping -c 1 -W 1 8.8.8.8 >/dev/null 2>&1; then
-        log_info "Сеть доступна"
-        break
-    fi
-    sleep 1
-done
 
 if [ $AUTO_MODE -eq 0 ] && [ -t 0 ]; then
     log_question "Do you have the Outline key? [y/N]: "
