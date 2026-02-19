@@ -13,6 +13,18 @@ RETRY_COUNT=5
 DEBUG=0
 LOG=$LOG_FILE
 
+# Режим выполнения (auto/interactive)
+if [ "$1" = "--auto" ] || [ "$1" = "-a" ]; then
+    AUTO_MODE=1
+else
+    AUTO_MODE=0
+    # Определяем режим выполнения (интерактивный или автоматический)
+    if [ ! -t 0 ]; then
+        AUTO_MODE=1
+    fi
+fi
+export AUTO_MODE
+
 # ============================================================================
 # Импорт функций логирования
 # ============================================================================
@@ -68,7 +80,7 @@ for i in $(seq 1 30); do
     sleep 1
 done
 
-if [ -t 0 ]; then
+if [ $AUTO_MODE -eq 0 ] && [ -t 0 ]; then
     log_question "Do you have the Outline key? [y/N]: "
     read OUTLINE
     if [ "$OUTLINE" = "y" ] || [ "$OUTLINE" = "Y" ]; then
@@ -231,18 +243,18 @@ rm -f /root/setup1.sh
 log_info "Скрипт удален"
 
 # Перезагрузка
-    if [ -t 0 ]; then
-        log_question "Перезагрузить сейчас? [y/N]: "
-        read REBOOT_NOW
-        if [ "$REBOOT_NOW" = "y" ] || [ "$REBOOT_NOW" = "Y" ]; then
-            log_info "Перезагружаюсь..."
-            sleep 3
-            reboot
-        else
-            log_info "Перезагрузка отложена. Рекомендуется перезагрузить систему вручную."
-        fi
-    else
-        log_info "=== Начинаю перезагрузку ==="
-        sync
+if [ $AUTO_MODE -eq 0 ] && [ -t 0 ]; then
+    log_question "Перезагрузить сейчас? [y/N]: "
+    read REBOOT_NOW
+    if [ "$REBOOT_NOW" = "y" ] || [ "$REBOOT_NOW" = "Y" ]; then
+        log_info "Перезагружаюсь..."
+        sleep 3
         reboot
+    else
+        log_info "Перезагрузка отложена. Рекомендуется перезагрузить систему вручную."
     fi
+else
+    log_info "=== Начинаю перезагрузку ==="
+    sync
+    reboot
+fi
