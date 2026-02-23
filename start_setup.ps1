@@ -2,11 +2,53 @@
 # Requires: OpenSSH Client (built-in Windows 10/11)
 # powershell.exe -ExecutionPolicy Bypass -File "C:\Users\Admin\Documents\dev\GitHub\TP-Link-Arcer-C5-USB\start_setup3.ps1"
 
-param(
-    [string]$RouterIP = "192.168.2.1",
-    [string]$RouterUser = "root"
-    [string]$StringSetup = "https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup.sh"
-)
+$script:RouterIP = "192.168.2.1"
+$script:RouterUser = "root"
+$script:SSHTimeout = 10
+$script:remoteDir = "/root"
+$script:localDir = ".\files"
+# Предопределенные списки
+$script:presetLists = @{
+    "1" = @{
+        Name = "Setup files"
+        URLs = @(
+            "https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup.sh",
+            "https://raw.githubusercontent.com/arhitru/fuctions_bash/refs/heads/main/logging_functions.sh",
+            "https://raw.githubusercontent.com/arhitru/fuctions_bash/refs/heads/main/execution_management_functions.sh",
+            "https://raw.githubusercontent.com/arhitru/fuctions_bash/refs/heads/main/system_verification_functions.sh",
+            "https://raw.githubusercontent.com/arhitru/fuctions_bash/refs/heads/main/opkg_functions.sh",
+            "https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/mount_usb_function.sh",
+            "https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/mount_usb.sh",
+            "https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/postboot.sh",
+            "https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup_required.sh",
+            "https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup_required.conf"
+        )
+    }
+    "2" = @{
+        Name = "OpenWrt Packages"
+        URLs = @()
+    }
+    "3" = @{
+        Name = "OpenWrt firmware"
+        URLs = @(
+            "https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/openwrt-24.10.5-93920bfa878c-ramips-mt7620-tplink_archer-c5-v4-squashfs-sysupgrade.bin"
+        )
+    }
+}
+
+# param(
+#     [string]$RouterIP = "192.168.2.1",
+#     [string]$RouterUser = "root"
+# )
+
+function OpenWRT-SysUpgrade {
+    $ask = Read-Host "`nDo you want to upgrade firmware? (y/n)"
+    if ($ask -eq 'y') {
+        $urls = $script:presetLists["3"].URLs
+        Write-Host "Selected: $($script:presetLists["2"].Name)" -ForegroundColor Green
+
+    }
+}
 
 # Function to request credentials
 function Get-WiFiCredentials {
@@ -56,8 +98,9 @@ function Test-RouterConnection {
     
     # Test SSH connection
     Write-Host "Testing SSH connection..." -ForegroundColor Yellow
-    $sshCommand = "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes $User@$IP 'echo connected' 2>&1"
-    
+    # $sshCommand = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=$env:TEMP\known_hosts_$([System.Guid]::NewGuid().ToString()) -o ConnectTimeout=5 -o BatchMode=yes $User@$IP 'echo connected' 2>&1"
+    $sshCommand = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o ConnectTimeout=5 -o BatchMode=yes $User@$IP 'echo connected' 2>&1"
+
     try {
         $result = Invoke-Expression $sshCommand
         if ($LASTEXITCODE -eq 0) {
@@ -126,20 +169,20 @@ function Scan-WiFiNetworks {
     # Try different scanning methods
     $scanMethods = @(
         @{
-            Name = "iwinfo wlan0"
-            Command = "iwinfo wlan0 scan 2>/dev/null"
+            Name = "iwinfo radio0"
+            Command = "iwinfo radio0 scan 2>/dev/null"
         },
         @{
-            Name = "iwinfo wlan1"
-            Command = "iwinfo wlan1 scan 2>/dev/null"
-        },
-        @{
-            Name = "iw dev wlan0 scan"
-            Command = "iw dev wlan0 scan 2>/dev/null | grep -E 'SSID:|signal:|freq:|BSS'"
-        },
-        @{
-            Name = "iw dev wlan1 scan"
-            Command = "iw dev wlan1 scan 2>/dev/null | grep -E 'SSID:|signal:|freq:|BSS'"
+            Name = "iwinfo radio1"
+            Command = "iwinfo radio1 scan 2>/dev/null"
+        # },
+        # @{
+        #     Name = "iw dev wlan0 scan"
+        #     Command = "iw dev wlan0 scan 2>/dev/null | grep -E 'SSID:|signal:|freq:|BSS'"
+        # },
+        # @{
+        #     Name = "iw dev wlan1 scan"
+        #     Command = "iw dev wlan1 scan 2>/dev/null | grep -E 'SSID:|signal:|freq:|BSS'"
         }
     )
     
@@ -373,8 +416,10 @@ iwinfo wlan0 scan
 function Invoke-RouterCommand {
     param([string]$Command)
     
-    $sshCommand = "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 $RouterUser@$RouterIP `"$Command`" 2>&1"
-    
+    # $sshCommand = "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 $script:RouterUser@$script:RouterIP `"$Command`" 2>&1"
+    $sshCommand = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=$env:TEMP\known_hosts_$([System.Guid]::NewGuid().ToString()) -o ConnectTimeout=5 -o BatchMode=yes $script:RouterUserr@$script:RouterIP `"$Command`" 2>&1"
+    $sshCommand = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o ConnectTimeout=5 -o BatchMode=yes $script:RouterUserr@$script:RouterIP `"$Command`" 2>&1"
+    # Write-Host $sshCommand
     try {
         $result = Invoke-Expression $sshCommand
         if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 255) {
@@ -679,6 +724,294 @@ function Test-WWANConnection {
     return $connected
 }
 
+# Функция для пакетной загрузки
+function Batch-DownloadFiles {
+    param(
+        [string]$RouterIP,
+        [string]$RouterUser,
+        [string]$NewIP,
+        [string]$remoteDir,
+        [string]$localDir,
+        [string]$presetList
+    )
+    
+    $localDir = $script:localDir
+
+    Write-Host "`n=== Batch File Download ===" -ForegroundColor Cyan
+    
+    $urls = $script:presetLists["$presetList"].URLs
+    # $urls = $presetList
+    Write-Host "Selected: $($script:presetLists["$presetList"].Name)" -ForegroundColor Green
+    # Write-Host "Selected: $($presetList.Name)" -ForegroundColor Green
+    
+    if ($urls.Count -eq 0) {
+        Write-Host "No URLs to download" -ForegroundColor Yellow
+        return $null
+    }
+    
+    Write-Host "`nURLs to download ($($urls.Count) files):" -ForegroundColor Cyan
+    for ($i = 0; $i -lt [Math]::Min(5, $urls.Count); $i++) {
+        Write-Host "  [$i] $($urls[$i])" -ForegroundColor Gray
+    }
+    if ($urls.Count -gt 5) {
+        Write-Host "  ... and $($urls.Count - 5) more" -ForegroundColor Gray
+    }
+    
+    # Создаем временные директории
+    $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+    
+    # Write-Host "`nCreating directories..." -ForegroundColor Yellow
+    # Write-Host "  Remote: $remoteDir"
+    # Write-Host "  Local: $localDir"
+    
+    # # Создаем remote директорию
+    # $mkdirResult = Invoke-RouterCommand "mkdir -p $remoteDir"
+    # if (-not $mkdirResult -and $LASTEXITCODE -ne 0) {
+    #     Write-Host "Failed to create remote directory" -ForegroundColor Red
+    #     return $null
+    # }
+    
+    # $downloadResult = Invoke-RouterCommand "cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup.sh && chmod +x setup.sh && ./setup.sh"
+    # Write-Host "`nDownloading: $downloadResult"
+
+    # Скачиваем с индикатором прогресса
+    $results = @()
+    $total = $urls.Count
+    
+    for ($i = 0; $i -lt $total; $i++) {
+        $url = $urls[$i].Trim()  # Убираем пробелы
+        $filename = [System.IO.Path]::GetFileName($url)
+        
+        # Если имя файла пустое или невалидное, генерируем имя
+        if ([string]::IsNullOrEmpty($filename) -or $filename -match '^[0-9a-f]{40}$' -or $filename -match '^[0-9a-f]{64}$') {
+            $filename = "file_$(Get-Random -Minimum 1000 -Maximum 9999).bin"
+        }
+        
+        # Очищаем имя файла от недопустимых символов
+        $filename = $filename -replace '[<>:"/\\|?*]', '_'
+        
+        # Показываем прогресс
+        $percent = [math]::Round((($i + 1) / $total) * 100, 1)
+        Write-Progress -Activity "Downloading files" -Status "$percent% Complete" -CurrentOperation $filename -PercentComplete $percent
+        
+        Write-Host "`n[$($i+1)/$total] Downloading: $filename" -ForegroundColor Cyan
+        
+        # Скачиваем на роутер
+        $remotePath = "$remoteDir/$filename"
+        $LocalPath = "$localDir/$filename"
+
+        # Экранируем URL для безопасной передачи
+        $escapedUrl = $url -replace "'", "'\\''"
+        $downloadCommand = "wget $url -O $remotePath"
+        $downloadResult = Invoke-RouterCommand "cd /root && $downloadCommand"
+        # Write-Host $downloadCommand
+        Write-Host $downloadResult
+
+        # Проверяем результат скачивания
+        $downloadSuccess = $false
+        if ($downloadResult -match "saved|100%|connected") {
+            $downloadSuccess = $true
+        } else {
+            # Проверяем размер файла
+            $fileSize = Invoke-RouterCommand "wc -c < '$remotePath' 2>/dev/null | tr -d ' '"
+            if ($fileSize -and $fileSize -match "^\d+$" -and [int]$fileSize -gt 0) {
+                $downloadSuccess = $true
+            }
+        }
+        
+        if ($downloadSuccess) {
+            Write-Host "  Downloaded to router" -ForegroundColor Green
+        } else {
+            Write-Host "  Download failed" -ForegroundColor Red
+            Write-Host "  Error: $downloadResult" -ForegroundColor Red
+            $results += @{
+                URL = $url
+                Status = "DownloadFailed"
+                Error = $downloadResult
+            }
+            # Создаем локальную директорию
+            try {
+                New-Item -ItemType Directory -Force -Path $localDir | Out-Null
+                Write-Host "Local directory created" -ForegroundColor Green
+            } catch {
+                Write-Host "Failed to create local directory: $_" -ForegroundColor Red
+                return $null
+            }
+
+            Download-WithWebRequest $Url $LocalPath
+            Copy-FileToRouter -LocalPath $LocalPath -RemotePath $remoteDir #-RouterIP $script:$RouterIP -RouterUser $script:$RouterUser
+        }
+    }
+    
+    Write-Progress -Activity "Downloading files" -Completed
+    
+    # Показываем результаты
+    Show-DownloadResults -Results $results -LocalDir $localDir -RemoteDir $remoteDir -RouterUser $RouterUser -RouterIP $targetIP
+    
+    return $results
+}
+
+# Показываем результаты cкачивания
+function Show-DownloadResults {
+    param(
+        $Results,
+        [string]$LocalDir,
+        [string]$RemoteDir,
+        [string]$RouterUser,
+        [string]$RouterIP
+    )
+    
+    Write-Host "`n" + "=" * 60 -ForegroundColor Cyan
+    Write-Host "DOWNLOAD SUMMARY" -ForegroundColor Cyan
+    Write-Host "=" * 60 -ForegroundColor Cyan
+    
+    $success = ($Results | Where-Object { $_.Status -eq "Success" }).Count
+    $failed = ($Results | Where-Object { $_.Status -ne "Success" }).Count
+    $total = $Results.Count
+    
+    # Статистика
+    Write-Host "`nStatistics:" -ForegroundColor Yellow
+    Write-Host "  Total files: $total" -ForegroundColor White
+    Write-Host "  Successful: $success" -ForegroundColor $(if ($success -gt 0) { "Green" } else { "Gray" })
+    Write-Host "  Failed: $failed" -ForegroundColor $(if ($failed -gt 0) { "Red" } else { "Gray" })
+    
+    # Директории
+    Write-Host "`nDirectories:" -ForegroundColor Yellow
+    Write-Host "  Local: $LocalDir" -ForegroundColor White
+    Write-Host "  Remote: $RemoteDir" -ForegroundColor White
+    
+    # Успешные загрузки
+    if ($success -gt 0) {
+        Write-Host "`nSuccessfully downloaded files:" -ForegroundColor Green
+        $successfulFiles = $Results | Where-Object { $_.Status -eq "Success" }
+        foreach ($file in $successfulFiles) {
+            $fileInfo = Get-Item $file.LocalPath -ErrorAction SilentlyContinue
+            if ($fileInfo) {
+                $size = if ($fileInfo.Length -gt 1MB) {
+                    "{0:N2} MB" -f ($fileInfo.Length / 1MB)
+                } elseif ($fileInfo.Length -gt 1KB) {
+                    "{0:N2} KB" -f ($fileInfo.Length / 1KB)
+                } else {
+                    "{0} B" -f $fileInfo.Length
+                }
+                $fileName = Split-Path $file.LocalPath -Leaf
+                Write-Host "  $fileName ($size)" -ForegroundColor White
+            } else {
+                Write-Host "  $(Split-Path $file.LocalPath -Leaf)" -ForegroundColor White
+            }
+        }
+    }
+    
+    # Неудачные загрузки
+    if ($failed -gt 0) {
+        Write-Host "`nFailed downloads:" -ForegroundColor Red
+        $failedFiles = $Results | Where-Object { $_.Status -ne "Success" }
+        foreach ($file in $failedFiles) {
+            Write-Host "  • $($file.URL)" -ForegroundColor Red
+            Write-Host "    Status: $($file.Status)" -ForegroundColor Gray
+            if ($file.Error) {
+                Write-Host "    Error: $($file.Error)" -ForegroundColor Gray
+            }
+        }
+    }
+    
+    # Создаем лог файл
+    $logPath = Join-Path $LocalDir "download_log.txt"
+    $logContent = @()
+    $logContent += "Download Log - $(Get-Date)"
+    $logContent += "=" * 50
+    $logContent += "Total files: $total"
+    $logContent += "Successful: $success"
+    $logContent += "Failed: $failed"
+    $logContent += ""
+    $logContent += "Files:"
+    
+    foreach ($result in $Results) {
+        if ($result.Status -eq "Success") {
+            $logContent += "[OK] $($result.URL) -> $($result.LocalPath)"
+        } else {
+            $logContent += "[FAIL] $($result.URL) - $($result.Status): $($result.Error)"
+        }
+    }
+    
+    # $logContent | Out-File -FilePath $logPath -Encoding UTF8
+    # Write-Host "`nLog saved to: $logPath" -ForegroundColor Gray
+}
+
+# Функция для копирования файла с Windows на роутер
+function Copy-FileToRouter {
+    param(
+        [string]$LocalPath,           # Путь к файлу на Windows
+        [string]$RemotePath,           # Путь на роутере (например, "/root/")
+        [string]$RouterIP = $script:RouterIP,
+        [string]$RouterUser = $script:RouterUser
+    )
+    
+    Write-Host "`nCopying file to router..." -ForegroundColor Cyan
+    
+    # Проверяем существование локального файла
+    if (-not (Test-Path $LocalPath)) {
+        Write-Host "Local file not found: $LocalPath" -ForegroundColor Red
+        return $false
+    }
+    
+    # Получаем имя файла
+    $fileName = Split-Path $LocalPath -Leaf
+    
+    # Формируем полный путь назначения
+    if ($RemotePath.EndsWith("/")) {
+        $fullRemotePath = "$RemotePath$fileName"
+    } else {
+        $fullRemotePath = "$RemotePath/$fileName"
+    }
+    
+    Write-Host "Copying: $LocalPath -> ${RouterUser}@${RouterIP}:${fullRemotePath}" -ForegroundColor Yellow
+    
+    # SCP команда для копирования С Windows НА роутер
+    $scpCommand = "scp -o StrictHostKeyChecking=no `"$LocalPath`" ${RouterUser}@${RouterIP}:'${fullRemotePath}' 2>&1"
+    Write-Host $scpCommand
+    try {
+        $result = Invoke-Expression $scpCommand
+        
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "File successfully copied to router" -ForegroundColor Green
+            
+            # Проверяем, что файл скопировался
+            $checkCommand = "ls -la '$fullRemotePath' 2>/dev/null"
+            $checkResult = Invoke-RouterCommand -Command $checkCommand
+            
+            if ($checkResult) {
+                Write-Host "File on router: $checkResult" -ForegroundColor Gray
+                return $true
+            }
+        } else {
+            Write-Host "SCP failed with exit code: $LASTEXITCODE" -ForegroundColor Red
+            Write-Host "Error: $result" -ForegroundColor Red
+            return $false
+        }
+    }
+    catch {
+        Write-Host "Error: $_" -ForegroundColor Red
+        return $false
+    }
+}
+
+# Скачивание напрямую с GitHub на Windows
+function Download-WithWebRequest {
+    param(
+        [string]$Url,
+        [string]$LocalPath
+    )
+    
+    try {
+        Invoke-WebRequest -Uri $Url -OutFile $LocalPath -UserAgent "Mozilla/5.0"
+        Write-Host "Downloaded directly to Windows" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "Download failed: $_" -ForegroundColor Red
+    }
+}
+
 # Main setup function
 function Set-OpenWrtWiFiClient {
     # Check SSH
@@ -687,7 +1020,7 @@ function Set-OpenWrtWiFiClient {
     }
     
     # Test router connection first
-    $connectionOk = Test-RouterConnection -IP $RouterIP -User $RouterUser
+    $connectionOk = Test-RouterConnection -IP $script:RouterIP -User $script:RouterUser
     if (-not $connectionOk) {
         Write-Host "`nCannot proceed without router connection!" -ForegroundColor Red
         return
@@ -766,61 +1099,65 @@ function Set-OpenWrtWiFiClient {
         Write-Host "`nWi-Fi client successfully connected via WWAN!" -ForegroundColor Green
         
         # Get new IP
-        $newIP = Invoke-RouterCommand "ip -4 addr show wwan0 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -1"
-        if ($newIP) {
-            Write-Host "New router IP address on WWAN: $newIP" -ForegroundColor Cyan
-        }
+        # $newIP = Invoke-RouterCommand "ip -4 addr show wwan0 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -1"
+        # if ($newIP) {
+        #     Write-Host "New router IP address on WWAN: $newIP" -ForegroundColor Cyan
+        # }
         
-        Invoke-RouterCommand "cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup.sh && chmod +x setup.sh && ./setup.sh"
+        # Invoke-RouterCommand "cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup.sh && chmod +x setup.sh && ./setup.sh"
 
         # Show network status
         Write-Host "`nNetwork Status:" -ForegroundColor Green
         $status = Invoke-RouterCommand "ip addr show wwan0 2>/dev/null"
         Write-Host $status -ForegroundColor Gray
+        Batch-DownloadFiles -RouterIP $script:RouterIP -remoteDir $script:remoteDir -presetList 1
+        $status = Invoke-RouterCommand "chmod +x /root/mount_usb.sh && /root/mount_usb.sh"
+
+        # # Ask to download file
+        # $downloadFile = Read-Host "`nDo you want to download a file from GitHub? (y/n)"
         
-        # Ask to download file
-        $downloadFile = Read-Host "`nDo you want to download a file from GitHub? (y/n)"
-        
-        if ($downloadFile -eq 'y') {
-            $githubUrl = Read-Host "Enter GitHub file URL"
+        # if ($downloadFile -eq 'y') {
+        #     $githubUrl = "https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup.sh"
             
-            try {
-                Write-Host "Downloading file..." -ForegroundColor Yellow
-                $filename = [System.IO.Path]::GetFileName($githubUrl)
-                if ([string]::IsNullOrEmpty($filename)) {
-                    $filename = "downloaded_file"
-                }
+        #     try {
+        #         Write-Host "Downloading file..." -ForegroundColor Yellow
+        #         $filename = [System.IO.Path]::GetFileName($githubUrl)
+        #         if ([string]::IsNullOrEmpty($filename)) {
+        #             $filename = "downloaded_file"
+        #         }
                 
-                $downloadCommand = "wget --no-check-certificate -O /tmp/$filename '$githubUrl' 2>&1"
-                $downloadResult = Invoke-RouterCommand $downloadCommand
+        #         $downloadCommand = "wget --no-check-certificate -O /root/$filename '$githubUrl' 2>&1"
+        #         $downloadResult = Invoke-RouterCommand $downloadCommand
                 
-                if ($LASTEXITCODE -eq 0) {
-                    Write-Host "File downloaded to router" -ForegroundColor Green
+        #         if ($LASTEXITCODE -eq 0) {
+        #             Write-Host "File downloaded to router" -ForegroundColor Green
+        #             Batch-DownloadFiles
+        #             Invoke-RouterCommand "chmod +x /root/setup.sh && /root/setup.sh"
+
+        #             # $localPath = Read-Host "Enter path to save file (Enter for current folder)"
+        #             # if ([string]::IsNullOrEmpty($localPath)) {
+        #             #     $localPath = ".\$filename"
+        #             # }
                     
-                    $localPath = Read-Host "Enter path to save file (Enter for current folder)"
-                    if ([string]::IsNullOrEmpty($localPath)) {
-                        $localPath = ".\$filename"
-                    }
+        #             # Write-Host "Copying file..." -ForegroundColor Yellow
+        #             # $targetIP = if ($newIP) { $newIP } else { $RouterIP }
+        #             # $scpCommand = "scp -o StrictHostKeyChecking=no ${RouterUser}@${targetIP}:/tmp/$filename `"$localPath`""
+        #             # Invoke-Expression $scpCommand 2>&1 | Out-Null
                     
-                    Write-Host "Copying file..." -ForegroundColor Yellow
-                    $targetIP = if ($newIP) { $newIP } else { $RouterIP }
-                    $scpCommand = "scp -o StrictHostKeyChecking=no ${RouterUser}@${targetIP}:/tmp/$filename `"$localPath`""
-                    Invoke-Expression $scpCommand 2>&1 | Out-Null
-                    
-                    if (Test-Path $localPath) {
-                        Write-Host "File saved as: $localPath" -ForegroundColor Green
+        #             # if (Test-Path $localPath) {
+        #             #     Write-Host "File saved as: $localPath" -ForegroundColor Green
                         
-                        # Clean up
-                        Invoke-RouterCommand "rm /tmp/$filename"
-                    }
-                } else {
-                    Write-Host "Error downloading file" -ForegroundColor Red
-                }
-            }
-            catch {
-                Write-Host "Download error: $_" -ForegroundColor Red
-            }
-        }
+        #             #     # Clean up
+        #             #     Invoke-RouterCommand "rm /tmp/$filename"
+        #             # }
+        #         } else {
+        #             Write-Host "Error downloading file" -ForegroundColor Red
+        #         }
+        #     }
+        #     catch {
+        #         Write-Host "Download error: $_" -ForegroundColor Red
+        #     }
+        # }
     } else {
         Write-Host "`nFailed to connect to Wi-Fi via WWAN" -ForegroundColor Red
         Write-Host "Restoring configuration..." -ForegroundColor Yellow
@@ -836,5 +1173,12 @@ function Set-OpenWrtWiFiClient {
     $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 }
 
+# Test-RouterConnection -IP $RouterIP -User $RouterUser
+
+$status = Invoke-RouterCommand "[ -b /dev/sda ] || echo 'USB-drive not found on router'"
+Write-Host $status
+# Batch-DownloadFiles -RouterIP $script:RouterIP -remoteDir $script:remoteDir -presetList 1
+# Batch-DownloadFiles
+# exit
 # Run main script
 Set-OpenWrtWiFiClient
