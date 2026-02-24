@@ -41,11 +41,261 @@ $script:presetLists = @{
 #     [string]$RouterUser = "root"
 # )
 
+function Get-LocalIPAddress {
+    $ipConfig = Get-NetIPConfiguration | Where-Object {$_.IPv4DefaultGateway -ne $null -and $_.NetAdapter.Status -eq "Up"}
+    if ($ipConfig) {
+        return $ipConfig.IPv4Address.IPAddress
+    }
+    return $null
+}
+
+# Function to extract subnet from IP address
+function Get-Subnet {
+    param([string]$ipAddress)
+    $ipParts = $ipAddress.Split('.')
+    return "$($ipParts[0]).$($ipParts[1]).$($ipParts[2])"
+}
+
+# Function to disable Wi-Fi adapter
+function Disable-WiFi {
+    param([object]$WiFiInfo)
+    
+    if ($WiFiInfo) {
+        Write-Host "Current Wi-Fi network '$($WiFiInfo.SSID)' will be remembered" -ForegroundColor Green
+    }
+    
+    Write-Host "Disabling Wi-Fi adapter..." -ForegroundColor Yellow
+    $wifiAdapter = Get-NetAdapter | Where-Object {$_.Name -like "*Wi-Fi*" -or $_.Name -like "*Wireless*" -or $_.InterfaceDescription -like "*Wireless*" -or $_.Name -like "*WLAN*"}
+    
+    if ($wifiAdapter) {
+        try {
+            Disable-NetAdapter -Name $wifiAdapter.Name -Confirm:$false -ErrorAction Stop
+            Write-Host "Wi-Fi adapter disabled" -ForegroundColor Green
+            Start-Sleep -Seconds 3
+        } catch {
+            Write-Host "Error disabling Wi-Fi: $_" -ForegroundColor Red
+        }
+    } else {
+        Write-Host "Could not find Wi-Fi adapter!" -ForegroundColor Red
+    }
+}
+
+# Function to get current Wi-Fi network info
+function Get-CurrentWiFiInfo {
+    Write-Host "Getting current Wi-Fi network information..." -ForegroundColor Yellow
+    
+    # Get Wi-Fi adapter
+    $wifiAdapter = Get-NetAdapter | Where-Object {$_.Name -like "*Wi-Fi*" -or $_.Name -like "*Wireless*" -or $_.InterfaceDescription -like "*Wireless*" -or $_.Name -like "*WLAN*"}
+    
+    if (-not $wifiAdapter) {
+        Write-Host "Could not find Wi-Fi adapter!" -ForegroundColor Red
+        return $null
+    }
+    
+    # Get current Wi-Fi connection info using netsh
+    $wifiInfo = netsh wlan show interfaces | Select-String "SSID" | Select-String -NotMatch "BSSID"
+    
+    if ($wifiInfo) {
+        $ssid = ($wifiInfo -split ":")[1].Trim()
+        Write-Host "Current Wi-Fi network: $ssid" -ForegroundColor Green
+        
+        # Also get the interface name for later use
+        $interfaceInfo = netsh wlan show interfaces | Select-String "Name" | Select-Object -First 1
+        if (-not $interfaceInfo) {
+            $interfaceInfo = netsh wlan show interfaces | Select-String "Name" | Select-Object -First 1
+        }
+        
+        if ($interfaceInfo) {
+            $interface = ($interfaceInfo -split ":")[1].Trim()
+        }
+        
+        return @{
+            SSID = $ssid
+            Interface = $interface
+            AdapterName = $wifiAdapter.Name
+        }
+    } else {
+        Write-Host "Not connected to any Wi-Fi network" -ForegroundColor Yellow
+        return $null
+    }
+}
+
+# Function to enable Wi-Fi adapter and reconnect to saved network
+function Enable-WiFiAndReconnect {
+    param([object]$WiFiInfo)
+    
+    Write-Host "Enabling Wi-Fi adapter..." -ForegroundColor Yellow
+    $wifiAdapter = Get-NetAdapter | Where-Object {$_.Name -like "*Wi-Fi*" -or $_.Name -like "*Wireless*" -or $_.InterfaceDescription -like "*Wireless*" -or $_.Name -like "*WLAN*"}
+    
+    if ($wifiAdapter) {
+        try {
+            Enable-NetAdapter -Name $wifiAdapter.Name -Confirm:$false -ErrorAction Stop
+            Write-Host "Wi-Fi adapter enabled" -ForegroundColor Green
+            
+            # Wait for adapter to initialize
+            Write-Host "Waiting for Wi-Fi adapter to initialize..." -ForegroundColor Yellow
+            Start-Sleep -Seconds 10
+            
+            # Try to reconnect to the saved network
+            if ($WiFiInfo -and $WiFiInfo.SSID) {
+                Write-Host "Attempting to reconnect to Wi-Fi network '$($WiFiInfo.SSID)'..." -ForegroundColor Yellow
+                
+                # First, try to connect using the profile
+                $connectResult = netsh wlan connect name="$($WiFiInfo.SSID)"
+                
+                if ($connectResult -like "*successfully*" -or $connectResult -like "*успешно*") {
+                    Write-Host "Successfully connected to '$($WiFiInfo.SSID)'" -ForegroundColor Green
+                } else {
+                    Write-Host "Could not automatically reconnect. Trying alternative method..." -ForegroundColor Yellow
+                    
+                    # Alternative: try to set the interface to connect to any available network
+                    $wlanInterface = netsh wlan show interfaces | Select-String "Имя" | Select-Object -First 1
+                    if (-not $wlanInterface) {
+                        $wlanInterface = netsh wlan show interfaces | Select-String "Name" | Select-Object -First 1
+                    }
+                    
+                    if ($wlanInterface) {
+                        $interfaceName = ($wlanInterface -split ":")[1].Trim()
+                        netsh wlan connect $WiFiInfo.SSID interface="$interfaceName"
+                    }
+                }
+                
+                # Wait for connection to establish
+                Write-Host "Waiting for connection to establish..." -ForegroundColor Yellow
+                Start-Sleep -Seconds 15
+                
+                # Verify connection
+                $checkConnection = netsh wlan show interfaces | Select-String "SSID" | Select-String -NotMatch "BSSID"
+                if ($checkConnection) {
+                    $connectedSSID = ($checkConnection -split ":")[1].Trim()
+                    Write-Host "Currently connected to: $connectedSSID" -ForegroundColor Green
+                }
+            } else {
+                Write-Host "No saved Wi-Fi network information. Will connect automatically if profiles exist." -ForegroundColor Yellow
+            }
+        } catch {
+            Write-Host "Error enabling Wi-Fi: $_" -ForegroundColor Red
+        }
+    } else {
+        Write-Host "Could not find Wi-Fi adapter!" -ForegroundColor Red
+    }
+}
+
+# Main script logic
+function check-gateway {
+    Write-Host "=== NETWORK SUBNET CHECK (OpenWrt) ===" -ForegroundColor Cyan
+    Write-Host "Date and time: $(Get-Date)`n"
+
+    # Get current Wi-Fi information BEFORE doing anything
+    $currentWiFi = Get-CurrentWiFiInfo
+
+    # Getting information about network adapters
+    $gateways = Get-NetRoute -DestinationPrefix "0.0.0.0/0" | 
+        Select-Object -Property InterfaceAlias, NextHop, InterfaceIndex, RouteMetric
+
+    if ($gateways) {
+        Write-Host "Current default gateways:" -ForegroundColor Green
+        $gateways | Format-Table -AutoSize
+        
+        # Finding wired connection (Ethernet) and assigning its gateway IP to $wiredRouterIP variable
+        $wiredGateway = $gateways | Where-Object { $_.InterfaceAlias -like "*Ethernet*" -or $_.InterfaceAlias -like "*LAN*" } | Select-Object -First 1
+        
+        if ($wiredGateway) {
+            $wiredRouterIP = $wiredGateway.NextHop
+            Write-Host "Wired gateway found: $wiredRouterIP (Interface: $($wiredGateway.InterfaceAlias))" -ForegroundColor Yellow
+        } else {
+            $wiredRouterIP = $null
+            Write-Host "Wired connection not found!" -ForegroundColor Red
+        }
+    } else {
+        Write-Host "Default gateway not found!" -ForegroundColor Red
+        $wiredRouterIP = $null
+    }
+
+    # Output result for verification
+    Write-Host "`nwiredRouterIP variable value: $wiredRouterIP" -ForegroundColor Cyan
+
+    # Get local IP address
+    $localIP = Get-LocalIPAddress
+    if (-not $localIP) {
+        Write-Host "Could not determine local IP address!" -ForegroundColor Red
+        exit 1
+    }
+
+    # Write-Host "Local IP address: $localIP" -ForegroundColor Yellow
+
+    if ($gateways.Count -ge 2 -and $gateways[0].NextHop -eq $gateways[1].NextHop){
+        $gatewayIP = $gateways[0].NextHop
+        $localSubnet = Get-Subnet -ipAddress $localIP
+        $gatewaySubnet = Get-Subnet -ipAddress $gatewayIP
+        $ipParts = $gatewayIP.Split('.')
+        $currentThirdOctet = [int]$ipParts[2]
+        $newThirdOctet = $currentThirdOctet + 1
+        $newSubnet = "$($ipParts[0]).$($ipParts[1]).$newThirdOctet"
+        
+        Write-Host "Current subnet: $($ipParts[0]).$($ipParts[1]).$currentThirdOctet.x" -ForegroundColor Yellow
+        Write-Host "New subnet: $newSubnet.x" -ForegroundColor Green
+
+        Disable-WiFi -WiFiInfo $currentWiFi
+
+        Read-Host "`nChange subnet to $newSubnet.x? (y/n)"
+
+        # Test router connection first
+        $connectionOk = Test-RouterConnection -IP $wiredRouterIP -User $script:RouterUser
+        if (-not $connectionOk) {
+            Write-Host "`nCannot proceed without router connection!" -ForegroundColor Red
+            return
+        }
+
+        # Using uci commands for OpenWrt
+        $commands = @(
+            "uci set network.lan.ipaddr='$newSubnet.1'",
+            "uci commit network",
+            "/etc/init.d/network restart",
+            "echo 'IP changed to $newSubnet.1'"
+        )
+
+        $wiredRouterIP = $newSubnet.1
+
+        Enable-WiFiAndReconnect -WiFiInfo $currentWiFi
+    }
+    return $wiredRouterIP
+}
+
+function get-scp {
+    $os = (Get-ComputerInfo -Property "WindowsProductName").WindowsProductName
+
+    if ($os -notmatch "Windows 10|Windows 11") {
+        Write-Host "Error: $os is not supported. Need Windows 10/11." -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host "OS: $os" -ForegroundColor Green
+
+    $getscp = Get-Command scp -ErrorAction SilentlyContinue
+
+    if ($getscp) {
+        Write-Host "SCP already installed" -ForegroundColor Green
+        return $getscp
+    }
+
+    Write-Host "Installing SCP..." -ForegroundColor Yellow
+
+    try {
+        Add-WindowsCapability -Online -Name "OpenSSH.Client~~~~0.0.1.0"
+        Write-Host "SCP installed successfully!" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "Installation failed: $_" -ForegroundColor Red
+        exit 1
+    }
+}
+
 function OpenWRT-SysUpgrade {
     $ask = Read-Host "`nDo you want to upgrade firmware? (y/n)"
     if ($ask -eq 'y') {
         $urls = $script:presetLists["3"].URLs
-        Write-Host "Selected: $($script:presetLists["2"].Name)" -ForegroundColor Green
+        Write-Host "Selected: $($script:presetLists["3"].Name)" -ForegroundColor Green
 
     }
 }
@@ -86,7 +336,7 @@ function Test-RouterConnection {
         [string]$User
     )
     
-    Write-Host "`nTesting connection to router $IP..." -ForegroundColor Yellow
+    Write-Host "`nTesting connection to router $IP...$User" -ForegroundColor Yellow
     
     # Test ping first
     $ping = Test-Connection -ComputerName $IP -Count 2 -Quiet
@@ -164,124 +414,130 @@ function Scan-WiFiNetworks {
     Write-Host "`nScanning for available Wi-Fi networks..." -ForegroundColor Cyan
     
     # Setup Wi-Fi first
-    Setup-WiFiForScanning
-    
-    # Try different scanning methods
-    $scanMethods = @(
-        @{
-            Name = "iwinfo radio0"
-            Command = "iwinfo radio0 scan 2>/dev/null"
-        },
-        @{
-            Name = "iwinfo radio1"
-            Command = "iwinfo radio1 scan 2>/dev/null"
-        # },
-        # @{
-        #     Name = "iw dev wlan0 scan"
-        #     Command = "iw dev wlan0 scan 2>/dev/null | grep -E 'SSID:|signal:|freq:|BSS'"
-        # },
-        # @{
-        #     Name = "iw dev wlan1 scan"
-        #     Command = "iw dev wlan1 scan 2>/dev/null | grep -E 'SSID:|signal:|freq:|BSS'"
-        }
-    )
-    
-    $allNetworks = @()
-    
-    foreach ($method in $scanMethods) {
-        Write-Host "Trying method: $($method.Name)..." -ForegroundColor Gray
-        $scanResult = Invoke-RouterCommand $method.Command
+    $radios = Setup-WiFiForScanning
+    if (-not $radios) {
+        return 0
+    }
+    else {
+        # Write-Host $radios
+
+        # Try different scanning methods
+        $scanMethods = @(
+            @{
+                Name = "iwinfo radio0"
+                Command = "iwinfo radio0 scan 2>/dev/null"
+            },
+            @{
+                Name = "iwinfo radio1"
+                Command = "iwinfo radio1 scan 2>/dev/null"
+            # },
+            # @{
+            #     Name = "iw dev wlan0 scan"
+            #     Command = "iw dev wlan0 scan 2>/dev/null | grep -E 'SSID:|signal:|freq:|BSS'"
+            # },
+            # @{
+            #     Name = "iw dev wlan1 scan"
+            #     Command = "iw dev wlan1 scan 2>/dev/null | grep -E 'SSID:|signal:|freq:|BSS'"
+            }
+        )
         
-        if ($scanResult -and $scanResult -notmatch "No such device|command not found") {
-            Write-Host "Scan successful with $($method.Name)" -ForegroundColor Green
+        $allNetworks = @()
+        
+        foreach ($method in $scanMethods) {
+            Write-Host "Trying method: $($method.Name)..." -ForegroundColor Gray
+            $scanResult = Invoke-RouterCommand $method.Command
             
-            if ($method.Name -match "iwinfo") {
-                $networks = Parse-IwinfoResults -ScanResult $scanResult
-            } else {
-                $networks = Parse-IwResults -ScanResult $scanResult
+            if ($scanResult -and $scanResult -notmatch "No such device|command not found") {
+                Write-Host "Scan successful with $($method.Name)" -ForegroundColor Green
+                
+                if ($method.Name -match "iwinfo") {
+                    $networks = Parse-IwinfoResults -ScanResult $scanResult
+                } else {
+                    $networks = Parse-IwResults -ScanResult $scanResult
+                }
+                
+                $allNetworks += $networks
+            }
+        }
+        
+        if ($allNetworks.Count -eq 0) {
+            Write-Host "Could not scan networks. Trying to create AP mode for scanning..." -ForegroundColor Yellow
+            
+            # Try to create temporary AP for scanning
+            $apNetworks = Setup-TempAPAndScan
+            if ($apNetworks) {
+                $allNetworks = $apNetworks
+            }
+        }
+        
+        if ($allNetworks.Count -eq 0) {
+            Write-Host "`nCould not scan any networks. Please check:" -ForegroundColor Red
+            Write-Host "  - Wi-Fi is enabled on router" -ForegroundColor Yellow
+            Write-Host "  - Wi-Fi drivers are loaded" -ForegroundColor Yellow
+            Write-Host "  - Router supports client mode" -ForegroundColor Yellow
+            
+            # Show current Wi-Fi status
+            $status = Invoke-RouterCommand "wifi status 2>/dev/null"
+            if ($status) {
+                Write-Host "`nCurrent Wi-Fi status:" -ForegroundColor Cyan
+                Write-Host $status -ForegroundColor Gray
             }
             
-            $allNetworks += $networks
-        }
-    }
-    
-    if ($allNetworks.Count -eq 0) {
-        Write-Host "Could not scan networks. Trying to create AP mode for scanning..." -ForegroundColor Yellow
-        
-        # Try to create temporary AP for scanning
-        $apNetworks = Setup-TempAPAndScan
-        if ($apNetworks) {
-            $allNetworks = $apNetworks
-        }
-    }
-    
-    if ($allNetworks.Count -eq 0) {
-        Write-Host "`nCould not scan any networks. Please check:" -ForegroundColor Red
-        Write-Host "  - Wi-Fi is enabled on router" -ForegroundColor Yellow
-        Write-Host "  - Wi-Fi drivers are loaded" -ForegroundColor Yellow
-        Write-Host "  - Router supports client mode" -ForegroundColor Yellow
-        
-        # Show current Wi-Fi status
-        $status = Invoke-RouterCommand "wifi status 2>/dev/null"
-        if ($status) {
-            Write-Host "`nCurrent Wi-Fi status:" -ForegroundColor Cyan
-            Write-Host $status -ForegroundColor Gray
+            return $null
         }
         
-        return $null
-    }
-    
-    # Remove duplicates by BSSID
-    $uniqueNetworks = @{}
-    foreach ($network in $allNetworks) {
-        if ($network.BSSID -and -not $uniqueNetworks.ContainsKey($network.BSSID)) {
-            $uniqueNetworks[$network.BSSID] = $network
+        # Remove duplicates by BSSID
+        $uniqueNetworks = @{}
+        foreach ($network in $allNetworks) {
+            if ($network.BSSID -and -not $uniqueNetworks.ContainsKey($network.BSSID)) {
+                $uniqueNetworks[$network.BSSID] = $network
+            }
         }
-    }
-    
-    # Display networks
-    Write-Host "`nAvailable Wi-Fi Networks:" -ForegroundColor Green
-    Write-Host "=" * 80
-    
-    $networkList = $uniqueNetworks.Values | Sort-Object -Property Signal -Descending
-    $index = 0
-    
-    foreach ($network in $networkList) {
-        $network.Index = $index
         
-        $signalColor = if ($network.Signal -ge -50) { "Green" } 
-                      elseif ($network.Signal -ge -60) { "Cyan" }
-                      elseif ($network.Signal -ge -70) { "Yellow" }
-                      else { "Red" }
+        # Display networks
+        Write-Host "`nAvailable Wi-Fi Networks:" -ForegroundColor Green
+        Write-Host "=" * 80
         
-        $signalBar = if ($network.Signal -ge -50) { "████████ (Excellent)" }
-                    elseif ($network.Signal -ge -60) { "███████░ (Good)" }
-                    elseif ($network.Signal -ge -70) { "█████░░░ (Fair)" }
-                    else { "██░░░░░░ (Poor)" }
+        $networkList = $uniqueNetworks.Values | Sort-Object -Property Signal -Descending
+        $index = 0
         
-        Write-Host "[$index] " -NoNewline -ForegroundColor Yellow
-        if ([string]::IsNullOrEmpty($network.ESSID)) { 
-            Write-Host "[Hidden Network]" -NoNewline -ForegroundColor Gray
-        } else {
-            Write-Host "$($network.ESSID)" -NoNewline -ForegroundColor White
+        foreach ($network in $networkList) {
+            $network.Index = $index
+            
+            $signalColor = if ($network.Signal -ge -50) { "Green" } 
+                        elseif ($network.Signal -ge -60) { "Cyan" }
+                        elseif ($network.Signal -ge -70) { "Yellow" }
+                        else { "Red" }
+            
+            $signalBar = if ($network.Signal -ge -50) { "████████ (Excellent)" }
+                        elseif ($network.Signal -ge -60) { "███████░ (Good)" }
+                        elseif ($network.Signal -ge -70) { "█████░░░ (Fair)" }
+                        else { "██░░░░░░ (Poor)" }
+            
+            Write-Host "[$index] " -NoNewline -ForegroundColor Yellow
+            if ([string]::IsNullOrEmpty($network.ESSID)) { 
+                Write-Host "[Hidden Network]" -NoNewline -ForegroundColor Gray
+            } else {
+                Write-Host "$($network.ESSID)" -NoNewline -ForegroundColor White
+            }
+            Write-Host " (CH $($network.Channel))" -NoNewline -ForegroundColor Cyan
+            Write-Host ""
+            Write-Host "    Signal: $($network.Signal) dBm " -NoNewline
+            Write-Host $signalBar -ForegroundColor $signalColor
+            Write-Host "    Encryption: $($network.Encryption)"
+            Write-Host "    BSSID: $($network.BSSID)"
+            Write-Host "-" * 80
+            
+            $index++
         }
-        Write-Host " (CH $($network.Channel))" -NoNewline -ForegroundColor Cyan
-        Write-Host ""
-        Write-Host "    Signal: $($network.Signal) dBm " -NoNewline
-        Write-Host $signalBar -ForegroundColor $signalColor
-        Write-Host "    Encryption: $($network.Encryption)"
-        Write-Host "    BSSID: $($network.BSSID)"
-        Write-Host "-" * 80
         
-        $index++
+        if ($index -eq 0) {
+            Write-Host "No networks found" -ForegroundColor Yellow
+            return $null
+        }
+        
+        return $networkList
     }
-    
-    if ($index -eq 0) {
-        Write-Host "No networks found" -ForegroundColor Yellow
-        return $null
-    }
-    
-    return $networkList
 }
 
 # Helper function to parse iwinfo results
@@ -1014,13 +1270,18 @@ function Download-WithWebRequest {
 
 # Main setup function
 function Set-OpenWrtWiFiClient {
+    # Chek SCP
+    $getscp = get-scp
+
     # Check SSH
     if (-not (Test-SSHClient)) {
         return
     }
     
+    $curWiredRouterIP = check-gateway
+
     # Test router connection first
-    $connectionOk = Test-RouterConnection -IP $script:RouterIP -User $script:RouterUser
+    $connectionOk = Test-RouterConnection -IP $curWiredRouterIP -User $script:RouterUser
     if (-not $connectionOk) {
         Write-Host "`nCannot proceed without router connection!" -ForegroundColor Red
         return
@@ -1028,149 +1289,105 @@ function Set-OpenWrtWiFiClient {
     
     # Try to scan networks
     $networks = Scan-WiFiNetworks
-    
-    if (-not $networks) {
-        Write-Host "`nCannot scan networks. Proceeding with manual entry." -ForegroundColor Yellow
+    if ($networks -eq 0) {
+        Write-Host "Need Test wan"
     } else {
-        # Ask if user wants to select from scanned networks
-        $selectFromScan = Read-Host "`nDo you want to select from scanned networks? (y/n)"
-        
-        if ($selectFromScan -eq 'y') {
-            $selection = Read-Host "Enter network number to connect to"
-            if ($selection -match "^\d+$" -and [int]$selection -lt $networks.Count) {
-                $selectedNetwork = $networks[[int]$selection]
-                $wifiSSID = $selectedNetwork.ESSID
-                Write-Host "Selected: $wifiSSID" -ForegroundColor Green
-                
-                $wifiPassword = Read-Host "Enter Wi-Fi password" -AsSecureString
-                $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($wifiPassword)
-                $plainPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
-                
-                $wifi = @{
-                    SSID = $wifiSSID
-                    Password = $plainPassword
+        if (-not $networks) {
+            Write-Host "`nCannot scan networks. Proceeding with manual entry." -ForegroundColor Yellow
+        } else {
+            # Ask if user wants to select from scanned networks
+            $selectFromScan = Read-Host "`nDo you want to select from scanned networks? (y/n)"
+            
+            if ($selectFromScan -eq 'y') {
+                $selection = Read-Host "Enter network number to connect to"
+                if ($selection -match "^\d+$" -and [int]$selection -lt $networks.Count) {
+                    $selectedNetwork = $networks[[int]$selection]
+                    $wifiSSID = $selectedNetwork.ESSID
+                    Write-Host "Selected: $wifiSSID" -ForegroundColor Green
+                    
+                    $wifiPassword = Read-Host "Enter Wi-Fi password" -AsSecureString
+                    $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($wifiPassword)
+                    $plainPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
+                    
+                    $wifi = @{
+                        SSID = $wifiSSID
+                        Password = $plainPassword
+                    }
+                } else {
+                    Write-Host "Invalid selection, using manual entry" -ForegroundColor Yellow
+                    $wifi = Get-WiFiCredentials
                 }
             } else {
-                Write-Host "Invalid selection, using manual entry" -ForegroundColor Yellow
                 $wifi = Get-WiFiCredentials
             }
-        } else {
+        }
+        if (-not $wifi) {
             $wifi = Get-WiFiCredentials
         }
-    }
-    
-    if (-not $wifi) {
-        $wifi = Get-WiFiCredentials
-    }
-    
-    # Select Wi-Fi band
-    $selectedRadio = Select-WiFiBand
-    
-    Write-Host "`nStarting router configuration..." -ForegroundColor Green
-    
-    # Create backup
-    Write-Host "Creating backup..." -ForegroundColor Yellow
-    Invoke-RouterCommand "cp /etc/config/wireless /etc/config/wireless.backup"
-    Invoke-RouterCommand "cp /etc/config/network /etc/config/network.backup"
-    Invoke-RouterCommand "cp /etc/config/firewall /etc/config/firewall.backup"
-    
-    # Enable the selected radio
-    Write-Host "Enabling radio $selectedRadio..." -ForegroundColor Yellow
-    Invoke-RouterCommand "uci set wireless.$selectedRadio.disabled=0"
-    
-    # Create WWAN interface and configure Wi-Fi
-    Create-WWANInterface -Radio $selectedRadio -SSID $wifi.SSID -Password $wifi.Password
-    
-    # Setup firewall
-    Setup-FirewallForWWAN
-    
-    # Apply all changes
-    Write-Host "Applying all changes..." -ForegroundColor Yellow
-    Invoke-RouterCommand "uci commit"
-    Invoke-RouterCommand "/etc/init.d/network restart"
-    Invoke-RouterCommand "wifi"
-    
-    Write-Host "`nRouter restarting network. Waiting for WWAN connection..." -ForegroundColor Cyan
-    
-    # Test WWAN connection
-    $connected = Test-WWANConnection -SSID $wifi.SSID
-    
-    if ($connected) {
-        Write-Host "`nWi-Fi client successfully connected via WWAN!" -ForegroundColor Green
         
-        # Get new IP
-        # $newIP = Invoke-RouterCommand "ip -4 addr show wwan0 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -1"
-        # if ($newIP) {
-        #     Write-Host "New router IP address on WWAN: $newIP" -ForegroundColor Cyan
-        # }
+        # Select Wi-Fi band
+        $selectedRadio = Select-WiFiBand
         
-        # Invoke-RouterCommand "cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup.sh && chmod +x setup.sh && ./setup.sh"
-
-        # Show network status
-        Write-Host "`nNetwork Status:" -ForegroundColor Green
-        $status = Invoke-RouterCommand "ip addr show wwan0 2>/dev/null"
-        Write-Host $status -ForegroundColor Gray
-        Batch-DownloadFiles -RouterIP $script:RouterIP -remoteDir $script:remoteDir -presetList 1
-        $status = Invoke-RouterCommand "chmod +x /root/mount_usb.sh && /root/mount_usb.sh"
-
-        # # Ask to download file
-        # $downloadFile = Read-Host "`nDo you want to download a file from GitHub? (y/n)"
+        Write-Host "`nStarting router configuration..." -ForegroundColor Green
         
-        # if ($downloadFile -eq 'y') {
-        #     $githubUrl = "https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup.sh"
-            
-        #     try {
-        #         Write-Host "Downloading file..." -ForegroundColor Yellow
-        #         $filename = [System.IO.Path]::GetFileName($githubUrl)
-        #         if ([string]::IsNullOrEmpty($filename)) {
-        #             $filename = "downloaded_file"
-        #         }
-                
-        #         $downloadCommand = "wget --no-check-certificate -O /root/$filename '$githubUrl' 2>&1"
-        #         $downloadResult = Invoke-RouterCommand $downloadCommand
-                
-        #         if ($LASTEXITCODE -eq 0) {
-        #             Write-Host "File downloaded to router" -ForegroundColor Green
-        #             Batch-DownloadFiles
-        #             Invoke-RouterCommand "chmod +x /root/setup.sh && /root/setup.sh"
-
-        #             # $localPath = Read-Host "Enter path to save file (Enter for current folder)"
-        #             # if ([string]::IsNullOrEmpty($localPath)) {
-        #             #     $localPath = ".\$filename"
-        #             # }
-                    
-        #             # Write-Host "Copying file..." -ForegroundColor Yellow
-        #             # $targetIP = if ($newIP) { $newIP } else { $RouterIP }
-        #             # $scpCommand = "scp -o StrictHostKeyChecking=no ${RouterUser}@${targetIP}:/tmp/$filename `"$localPath`""
-        #             # Invoke-Expression $scpCommand 2>&1 | Out-Null
-                    
-        #             # if (Test-Path $localPath) {
-        #             #     Write-Host "File saved as: $localPath" -ForegroundColor Green
-                        
-        #             #     # Clean up
-        #             #     Invoke-RouterCommand "rm /tmp/$filename"
-        #             # }
-        #         } else {
-        #             Write-Host "Error downloading file" -ForegroundColor Red
-        #         }
-        #     }
-        #     catch {
-        #         Write-Host "Download error: $_" -ForegroundColor Red
-        #     }
-        # }
-    } else {
-        Write-Host "`nFailed to connect to Wi-Fi via WWAN" -ForegroundColor Red
-        Write-Host "Restoring configuration..." -ForegroundColor Yellow
-        Invoke-RouterCommand "cp /etc/config/wireless.backup /etc/config/wireless"
-        Invoke-RouterCommand "cp /etc/config/network.backup /etc/config/network"
-        Invoke-RouterCommand "cp /etc/config/firewall.backup /etc/config/firewall"
+        # Create backup
+        Write-Host "Creating backup..." -ForegroundColor Yellow
+        Invoke-RouterCommand "cp /etc/config/wireless /etc/config/wireless.backup"
+        Invoke-RouterCommand "cp /etc/config/network /etc/config/network.backup"
+        Invoke-RouterCommand "cp /etc/config/firewall /etc/config/firewall.backup"
+        
+        # Enable the selected radio
+        Write-Host "Enabling radio $selectedRadio..." -ForegroundColor Yellow
+        Invoke-RouterCommand "uci set wireless.$selectedRadio.disabled=0"
+        
+        # Create WWAN interface and configure Wi-Fi
+        Create-WWANInterface -Radio $selectedRadio -SSID $wifi.SSID -Password $wifi.Password
+        
+        # Setup firewall
+        Setup-FirewallForWWAN
+        
+        # Apply all changes
+        Write-Host "Applying all changes..." -ForegroundColor Yellow
+        Invoke-RouterCommand "uci commit"
         Invoke-RouterCommand "/etc/init.d/network restart"
         Invoke-RouterCommand "wifi"
-        Write-Host "Configuration restored" -ForegroundColor Green
+        
+        Write-Host "`nRouter restarting network. Waiting for WWAN connection..." -ForegroundColor Cyan
+        
+        # Test WWAN connection
+        $connected = Test-WWANConnection -SSID $wifi.SSID
+        
+        if ($connected) {
+            Write-Host "`nWi-Fi client successfully connected via WWAN!" -ForegroundColor Green
+            
+            # Get new IP
+            # $newIP = Invoke-RouterCommand "ip -4 addr show wwan0 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -1"
+            # if ($newIP) {
+            #     Write-Host "New router IP address on WWAN: $newIP" -ForegroundColor Cyan
+            # }
+            
+            # Invoke-RouterCommand "cd /root && wget https://raw.githubusercontent.com/arhitru/TP-Link-Arcer-C5-USB/main/setup.sh && chmod +x setup.sh && ./setup.sh"
+
+            # Show network status
+            Write-Host "`nNetwork Status:" -ForegroundColor Green
+            $status = Invoke-RouterCommand "ip addr show wwan0 2>/dev/null"
+            Write-Host $status -ForegroundColor Gray
+            Batch-DownloadFiles -RouterIP $script:RouterIP -remoteDir $script:remoteDir -presetList 1
+            $status = Invoke-RouterCommand "chmod +x /root/mount_usb.sh && /root/mount_usb.sh"
+        } else {
+            Write-Host "`nFailed to connect to Wi-Fi via WWAN" -ForegroundColor Red
+            Write-Host "Restoring configuration..." -ForegroundColor Yellow
+            Invoke-RouterCommand "cp /etc/config/wireless.backup /etc/config/wireless"
+            Invoke-RouterCommand "cp /etc/config/network.backup /etc/config/network"
+            Invoke-RouterCommand "cp /etc/config/firewall.backup /etc/config/firewall"
+            Invoke-RouterCommand "/etc/init.d/network restart"
+            Invoke-RouterCommand "wifi"
+            Write-Host "Configuration restored" -ForegroundColor Green
+        }
+        
+        Write-Host "`nPress any key to exit..."
+        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
     }
-    
-    Write-Host "`nPress any key to exit..."
-    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 }
 
 # Test-RouterConnection -IP $RouterIP -User $RouterUser
