@@ -222,7 +222,7 @@ function check-gateway {
         exit 1
     }
 
-    # Write-Host "Local IP address: $localIP" -ForegroundColor Yellow
+    Write-Host "Local IP address: $localIP" -ForegroundColor Yellow
 
     if ($gateways.Count -ge 2 -and $gateways[0].NextHop -eq $gateways[1].NextHop){
         $gatewayIP = $gateways[0].NextHop
@@ -302,6 +302,11 @@ function OpenWRT-SysUpgrade {
 
 # Function to request credentials
 function Get-WiFiCredentials {
+    param(
+    [string]$IP
+    # [string]$RouterUser
+    )
+
     Write-Host "=== OpenWrt Wi-Fi Client Setup ===" -ForegroundColor Cyan
     Write-Host "Router: $RouterIP" -ForegroundColor Yellow
     
@@ -460,15 +465,15 @@ function Scan-WiFiNetworks {
             }
         }
         
-        if ($allNetworks.Count -eq 0) {
-            Write-Host "Could not scan networks. Trying to create AP mode for scanning..." -ForegroundColor Yellow
+        # if ($allNetworks.Count -eq 0) {
+        #     Write-Host "Could not scan networks. Trying to create AP mode for scanning..." -ForegroundColor Yellow
             
-            # Try to create temporary AP for scanning
-            $apNetworks = Setup-TempAPAndScan
-            if ($apNetworks) {
-                $allNetworks = $apNetworks
-            }
-        }
+        #     # Try to create temporary AP for scanning
+        #     $apNetworks = Setup-TempAPAndScan
+        #     if ($apNetworks) {
+        #         $allNetworks = $apNetworks
+        #     }
+        # }
         
         if ($allNetworks.Count -eq 0) {
             Write-Host "`nCould not scan any networks. Please check:" -ForegroundColor Red
@@ -477,7 +482,7 @@ function Scan-WiFiNetworks {
             Write-Host "  - Router supports client mode" -ForegroundColor Yellow
             
             # Show current Wi-Fi status
-            $status = Invoke-RouterCommand "wifi status 2>/dev/null"
+            $status = Invoke-RouterCommand "wifi status 2>/dev/null | grep -q 'up' && echo 'up' || echo 'down'"
             if ($status) {
                 Write-Host "`nCurrent Wi-Fi status:" -ForegroundColor Cyan
                 Write-Host $status -ForegroundColor Gray
@@ -673,8 +678,8 @@ function Invoke-RouterCommand {
     param([string]$Command)
     
     # $sshCommand = "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 $script:RouterUser@$script:RouterIP `"$Command`" 2>&1"
-    $sshCommand = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=$env:TEMP\known_hosts_$([System.Guid]::NewGuid().ToString()) -o ConnectTimeout=5 -o BatchMode=yes $script:RouterUserr@$script:RouterIP `"$Command`" 2>&1"
-    $sshCommand = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o ConnectTimeout=5 -o BatchMode=yes $script:RouterUserr@$script:RouterIP `"$Command`" 2>&1"
+    # $sshCommand = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=$env:TEMP\known_hosts_$([System.Guid]::NewGuid().ToString()) -o ConnectTimeout=5 -o BatchMode=yes $script:RouterUser@$script:RouterIP `"$Command`" 2>&1"
+    $sshCommand = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o ConnectTimeout=5 -o BatchMode=yes $script:RouterUser@$script:RouterIP `"$Command`" 2>&1"
     # Write-Host $sshCommand
     try {
         $result = Invoke-Expression $sshCommand
@@ -1102,7 +1107,7 @@ function Batch-DownloadFiles {
     Write-Progress -Activity "Downloading files" -Completed
     
     # Показываем результаты
-    Show-DownloadResults -Results $results -LocalDir $localDir -RemoteDir $remoteDir -RouterUser $RouterUser -RouterIP $targetIP
+    Show-DownloadResults -Results $results -LocalDir $localDir -RemoteDir $remoteDir -RouterUser $RouterUser -RouterIP $RouterIP
     
     return $results
 }
@@ -1279,6 +1284,9 @@ function Set-OpenWrtWiFiClient {
     }
     
     $curWiredRouterIP = check-gateway
+    Write-Host "curWiredRouterIP $curWiredRouterIP"
+    
+    $curWiredRouterIP = '192.168.1.1'
 
     # Test router connection first
     $connectionOk = Test-RouterConnection -IP $curWiredRouterIP -User $script:RouterUser
@@ -1315,14 +1323,14 @@ function Set-OpenWrtWiFiClient {
                     }
                 } else {
                     Write-Host "Invalid selection, using manual entry" -ForegroundColor Yellow
-                    $wifi = Get-WiFiCredentials
+                    $wifi = Get-WiFiCredentials -IP $curWiredRouterIP
                 }
             } else {
-                $wifi = Get-WiFiCredentials
+                $wifi = Get-WiFiCredentials -IP $curWiredRouterIP
             }
         }
         if (-not $wifi) {
-            $wifi = Get-WiFiCredentials
+            $wifi = Get-WiFiCredentials -IP $curWiredRouterIP
         }
         
         # Select Wi-Fi band
@@ -1372,7 +1380,7 @@ function Set-OpenWrtWiFiClient {
             Write-Host "`nNetwork Status:" -ForegroundColor Green
             $status = Invoke-RouterCommand "ip addr show wwan0 2>/dev/null"
             Write-Host $status -ForegroundColor Gray
-            Batch-DownloadFiles -RouterIP $script:RouterIP -remoteDir $script:remoteDir -presetList 1
+            Batch-DownloadFiles -RouterIP $curWiredRouterIP -remoteDir $script:remoteDir -presetList 1
             $status = Invoke-RouterCommand "chmod +x /root/mount_usb.sh && /root/mount_usb.sh"
         } else {
             Write-Host "`nFailed to connect to Wi-Fi via WWAN" -ForegroundColor Red
@@ -1392,8 +1400,6 @@ function Set-OpenWrtWiFiClient {
 
 # Test-RouterConnection -IP $RouterIP -User $RouterUser
 
-$status = Invoke-RouterCommand "[ -b /dev/sda ] || echo 'USB-drive not found on router'"
-Write-Host $status
 # Batch-DownloadFiles -RouterIP $script:RouterIP -remoteDir $script:remoteDir -presetList 1
 # Batch-DownloadFiles
 # exit
